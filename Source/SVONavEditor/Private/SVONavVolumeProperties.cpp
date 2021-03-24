@@ -50,7 +50,7 @@ void FSVONavVolumeProperties::CustomizeDetails( IDetailLayoutBuilder& DetailBuil
 		}
 	}
 
-	DetailBuilder.EditCategory("Nav")
+	DetailBuilder.EditCategory("SVONav")
 		.AddCustomRow(NSLOCTEXT("NavVolume", "Build Octree", "Build Octree"))
 		.ValueContent()
 		.MaxDesiredWidth(125.f)
@@ -68,7 +68,7 @@ void FSVONavVolumeProperties::CustomizeDetails( IDetailLayoutBuilder& DetailBuil
 		]
 		];
 
-	DetailBuilder.EditCategory("Nav")
+	DetailBuilder.EditCategory("SVONav")
 		.AddCustomRow(NSLOCTEXT("NavVolume", "Clear Octree", "Clear Octree"))
 		.ValueContent()
 		.MaxDesiredWidth(125.f)

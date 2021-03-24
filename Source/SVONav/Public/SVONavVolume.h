@@ -10,7 +10,7 @@
 DECLARE_DELEGATE(FSVONavUpdateOctreeDelegate);
 
 /**
- * Volume contains the octree and methods required for 3D navigation
+ * Volume contains the octree and methods required for  navigation
  */
 UCLASS(Blueprintable, meta=(DisplayName = "SVO Navigation Volume"))
 class SVONAV_API ASVONavVolume : public AVolume
@@ -44,7 +44,7 @@ public:
 
 	// Draw distance for debug lines
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging")
-	float DebugDistance = 50000.f;
+	float DebugDistance = 5000.f;
 
 	// Show the entire volume bounds
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging")
@@ -87,7 +87,7 @@ public:
 	bool bDisplayMortonCodes = false;
 
 	// The colour for morton code debug drawing
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Nav3D|Debugging|Morton Codes")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging|Morton Codes")
 	FColor MortonCodeColour = FColor::Magenta;
 	
 	// The scaling factor for morton code debug drawing
@@ -112,6 +112,11 @@ public:
 
 	UFUNCTION()
 	void UpdateTaskComplete();
+
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual void PostEditUndo() override;
+#endif 
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
@@ -149,6 +154,7 @@ public:
 
 	//debug draw
 	void FlushDebugDraw() const;
+	void AddDebugNavPath(const FSVONavDebugPath DebugPath);
 	void RequestOctreeDebugDraw();
 	void DebugDrawOctree();
 
@@ -167,7 +173,7 @@ private:
 #if WITH_EDITOR
 	bool bDebugDrawRequested;
 	TArray<FSVONavDebugLink> DebugLinks;
-	TArray<FSVONavPath> DebugPaths;
+	TArray<FSVONavDebugPath> DebugPaths;
 	TArray<FSVONavDebugLocation> DebugLocations;
 #endif	
 	

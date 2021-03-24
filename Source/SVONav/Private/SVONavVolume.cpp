@@ -41,36 +41,24 @@ void ASVONavVolume::OnConstruction(const FTransform& Transform)
 
 void ASVONavVolume::BeginPlay()
 {
+	CachedOctree = Octree;
+	OnUpdateComplete.BindUFunction(this, FName("UpdateTaskComplete"));
+	SetActorTickInterval(TickInterval);
 }
 
 void ASVONavVolume::Tick(float DeltaTime)
 {
+	Super::Tick(DeltaTime);
 }
 
 void ASVONavVolume::PostRegisterAllComponents()
 {
+	Super::PostRegisterAllComponents();
 }
 
 void ASVONavVolume::PostUnregisterAllComponents()
 {
-}
-
-void ASVONavVolume::EditorApplyTranslation(const FVector& DeltaTranslation, bool bAltDown, bool bShiftDown,
-                                           bool bCtrlDown)
-{
-}
-
-void ASVONavVolume::EditorApplyRotation(const FRotator& DeltaRotation, bool bAltDown, bool bShiftDown, bool bCtrlDown)
-{
-}
-
-void ASVONavVolume::EditorApplyScale(const FVector& DeltaScale, const FVector* PivotLocation, bool bAltDown,
-                                     bool bShiftDown, bool bCtrlDown)
-{
-}
-
-void ASVONavVolume::Serialize(FArchive& Ar)
-{
+	Super::PostUnregisterAllComponents();
 }
 
 void ASVONavVolume::Initialise()
@@ -134,6 +122,15 @@ void ASVONavVolume::UpdateOctree()
 {
 }
 
+void ASVONavVolume::Serialize(FArchive& Ar)
+{
+	Super::Serialize(Ar);
+	Ar << Octree;
+	Ar << VoxelHalfSizes;
+	Ar << VolumeExtent;
+	NumBytes = Octree.GetSize();
+}
+
 void ASVONavVolume::GetVolumeExtents(const FVector& Location, int32 LayerIndex, FIntVector& Extents) const
 {
 	const FBox ComponentBox = GetComponentsBoundingBox(true);
@@ -154,44 +151,6 @@ void ASVONavVolume::GetMortonVoxel(const FVector& Location, int32 LayerIndex, FI
 	MortonLocation.X = FMath::FloorToInt(LocationLocal.X / Size);
 	MortonLocation.Y = FMath::FloorToInt(LocationLocal.Y / Size);
 	MortonLocation.Z = FMath::FloorToInt(LocationLocal.Z / Size);
-}
-
-
-void ASVONavVolume::DebugDrawOctree()
-{
-	GetWorld()->PersistentLineBatcher->SetComponentTickEnabled(false);
-	FlushDebugDraw();
-	if (OctreeValid())
-	{
-		for (int32 I = 0; I < Octree.Layers.Num(); I++)
-		{
-			for (int32 J = 0; J < Octree.Layers[I].Num(); J++)
-			{
-				FVector NodeLocation;
-				GetNodeLocation(I, Octree.Layers[I][J].MortonCode, NodeLocation);
-				if (I == 0 && bDisplayLeaves || I > 0 && bDisplayLayers)
-				{
-					DebugDrawVoxel(NodeLocation, FVector(VoxelHalfSizes[I]), GetLayerColour(I));
-				}
-				if (bDisplayMortonCodes)
-				{
-					DebugDrawMortonCode(NodeLocation,
-					                    FString::FromInt(I) + ":" + FString::FromInt(Octree.Layers[I][J].MortonCode),
-					                    MortonCodeColour);
-				}
-			}
-		}
-
-		// Links must be rebuilt to draw Link adjacency
-		if (bDisplayNeighbourLink)
-		{
-			DebugLinks.Empty();
-			for (int32 I = NumLayers - 2; I >= 0; I--) BuildLinks(I);
-			DebugDrawNeighbourLink();
-		}
-
-		if (bDisplayLeafOcclusion) DebugDrawLeafOcclusion();
-	}
 }
 
 void ASVONavVolume::UpdateVolume()
@@ -219,21 +178,17 @@ void ASVONavVolume::UpdateVolume()
 void ASVONavVolume::InitRasterize()
 {
 	BlockedIndices.Emplace();
-	for (int32 I = 0; I < GetLayerNodeCount(1); I++)
-	{
+	for (int32 I = 0; I < GetLayerNodeCount(1); I++) {
 		FVector Location;
 		GetNodeLocation(1, I, Location);
-		if (IsBlocked(Location, VoxelHalfSizes[1]))
-		{
+		if (IsBlocked(Location, VoxelHalfSizes[1])) {
 			BlockedIndices[0].Add(I);
 		}
 	}
 
-	for (int32 I = 0; I < VoxelExponent; I++)
-	{
+	for (int32 I = 0; I < VoxelExponent; I++) {
 		BlockedIndices.Emplace();
-		for (uint_fast64_t& MortonCode : BlockedIndices[I])
-		{
+		for (uint_fast64_t& MortonCode : BlockedIndices[I]) {
 			BlockedIndices[I + 1].Add(MortonCode >> 3);
 		}
 	}
@@ -310,34 +265,37 @@ void ASVONavVolume::RasterizeLayer(uint8 LayerIndex)
 
 void ASVONavVolume::RasterizeLeaf(FVector NodeLocation, int32 LeafIndex)
 {
+	const FVector Location = NodeLocation - VoxelHalfSizes[0];
+	const float VoxelScale = VoxelHalfSizes[0] * 0.5f;
+	for (int32 I = 0; I < 64; I++) {
+		uint_fast32_t X, Y, Z;
+		morton3D_64_decode(I, X, Y, Z);
+		const FVector VoxelLocation = Location + FVector(X * VoxelScale, Y * VoxelScale, Z * VoxelScale) + VoxelScale * 0.5f;
+		if (LeafIndex >= Octree.Leaves.Num() - 1) Octree.Leaves.AddDefaulted(1);
+
+		if (IsBlocked(VoxelLocation, VoxelScale * 0.5f)) Octree.Leaves[LeafIndex].SetSubNode(I);
+	}
 }
 
 void ASVONavVolume::BuildLinks(uint8 LayerIndex)
 {
 	if (Octree.Layers.Num() == 0) return;
 	TArray<FSVONavNode>& Layer = GetLayer(LayerIndex);
-	for (int32 I = 0; I < Layer.Num(); I++)
-	{
+	for (int32 I = 0; I < Layer.Num(); I++) {
 		FSVONavNode& Node = Layer[I];
 		FVector NodeLocation;
 		GetNodeLocation(LayerIndex, Node.MortonCode, NodeLocation);
 
-		for (int32 Direction = 0; Direction < 6; Direction++)
-		{
+		for (int32 Direction = 0; Direction < 6; Direction++) {
 			int32 NodeIndex = I;
 			FSVONavLink& Link = Node.Neighbours[Direction];
 			uint8 CurrentLayer = LayerIndex;
-			while (!FindLink(CurrentLayer, NodeIndex, Direction, Link, NodeLocation) && CurrentLayer < Octree.Layers.
-				Num() - 2)
-			{
+			while (!FindLink(CurrentLayer, NodeIndex, Direction, Link, NodeLocation) && CurrentLayer < Octree.Layers.Num() - 2) {
 				FSVONavLink& ParentLink = GetLayer(CurrentLayer)[NodeIndex].Parent;
-				if (ParentLink.IsValid())
-				{
+				if (ParentLink.IsValid()) {
 					NodeIndex = ParentLink.NodeIndex;
 					CurrentLayer = ParentLink.LayerIndex;
-				}
-				else
-				{
+				} else {
 					CurrentLayer++;
 					GetNodeIndex(CurrentLayer, Node.MortonCode >> 3, NodeIndex);
 				}
@@ -350,27 +308,26 @@ bool ASVONavVolume::FindLink(uint8 LayerIndex, int32 NodeIndex, uint8 Direction,
                              const FVector& NodeLocation)
 {
 	const int32 MaxCoordinate = GetSegmentNodeCount(LayerIndex);
-
+	
 	TArray<FSVONavNode>& Layer = GetLayer(LayerIndex);
 	FSVONavNode& TargetNode = GetLayer(LayerIndex)[NodeIndex];
-
+	
 	uint_fast32_t X, Y, Z;
 	morton3D_64_decode(TargetNode.MortonCode, X, Y, Z);
-
+	
 	// Create a signed vector from the X Y and Z values
-	FIntVector S(static_cast<int32>(X), static_cast<int32>(Y), static_cast<int32>(Z));
+	FIntVector S( static_cast<int32>(X), static_cast<int32>(Y), static_cast<int32>(Z) );
 	S += Directions[Direction];
 	if (S.X < 0 || S.X >= MaxCoordinate ||
-		S.Y < 0 || S.Y >= MaxCoordinate ||
-		S.Z < 0 || S.Z >= MaxCoordinate)
-	{
+        S.Y < 0 || S.Y >= MaxCoordinate ||
+        S.Z < 0 || S.Z >= MaxCoordinate) {
 		Link.Invalidate();
 		return true;
-	}
+        }
 	X = S.X;
 	Y = S.Y;
 	Z = S.Z;
-
+	
 	const uint_fast64_t AdjacentCode = morton3D_64_encode(X, Y, Z);
 	int32 Stop = Layer.Num();
 	int32 NodeDelta = 1;
@@ -385,23 +342,23 @@ bool ASVONavVolume::FindLink(uint8 LayerIndex, int32 NodeIndex, uint8 Direction,
 		FSVONavNode& Node = Layer[I];
 		if (Node.MortonCode == AdjacentCode)
 		{
-			if (LayerIndex == 0 &&
-				Node.HasChildren() &&
-				Octree.Leaves[Node.FirstChild.NodeIndex].IsOccluded())
-			{
+			if (LayerIndex == 0 && 
+                Node.HasChildren() && 
+                Octree.Leaves[Node.FirstChild.NodeIndex].IsOccluded()) {
+				
 				Link.Invalidate();
 				return true;
-			}
+                }
 			Link.SetLayerIndex(LayerIndex);
-			if (I >= Layer.Num() || I < 0) break;
+			if (I >= Layer.Num() || I < 0) break; 
 			Link.SetNodeIndex(I);
 			FVector AdjacentLocation;
 			GetNodeLocation(LayerIndex, AdjacentCode, AdjacentLocation);
-
+			
 #if WITH_EDITOR
 			DebugLinks.Add(FSVONavDebugLink(NodeLocation, AdjacentLocation, LayerIndex));
 #endif
-
+			
 			return true;
 		}
 		if (NodeDelta == -1 && Node.MortonCode < AdjacentCode || NodeDelta == 1 && Node.MortonCode > AdjacentCode)
@@ -736,7 +693,56 @@ bool ASVONavVolume::IsBlocked(const FVector& Location, float Size, TArray<FOverl
 	);
 }
 
+FColor ASVONavVolume::GetLayerColour(const int32 LayerIndex) const
+{
+	const float Ratio = LayerColours.Num() / static_cast<float>(NumLayers) * LayerIndex;
+	const int32 FirstIndex = FMath::FloorToInt(Ratio);
+	const int32 LastIndex = FMath::Min(FMath::CeilToInt(Ratio), LayerColours.Num() - 1);
+	const float Lerp = FMath::Fmod(Ratio, 1);
+	return FColor(
+		FMath::Lerp(LayerColours[FirstIndex].R, LayerColours[LastIndex].R, Lerp),
+		FMath::Lerp(LayerColours[FirstIndex].G, LayerColours[LastIndex].G, Lerp),
+		FMath::Lerp(LayerColours[FirstIndex].B, LayerColours[LastIndex].B, Lerp)
+	);
+}
+
 #if WITH_EDITOR
+
+void ASVONavVolume::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	FProperty* Property = PropertyChangedEvent.Property;
+	const FString PropertyName = Property != nullptr ? Property->GetFName().ToString() : "";
+
+	const TSet<FString> CriticalProperties = {
+		"VolumeSize",
+        "VoxelSize"};
+	const TSet<FString> DebugProperties = {
+		"bDisplayVolumeBounds",
+        "VolumeBoundsColor",
+        "bDisplayLayers",
+        "bDisplayLeaves",
+        "bDisplayLeafOcclusion",
+        "bDisplayNeighbourLink",
+        "LineScale",
+        "LayerColours",
+        "LeafOcclusionColour",
+        "bDisplayMortonCodes",
+        "MortonCodeColour",
+        "MortonCodeScale"};
+	if (CriticalProperties.Contains(PropertyName)) {
+		Initialise();
+		DebugDrawOctree();
+	} else if (DebugProperties.Contains(PropertyName)) {
+		DebugDrawOctree();
+	}
+}
+
+void ASVONavVolume::PostEditUndo()
+{
+	Super::PostEditUndo();
+	Initialise();
+}
 
 void ASVONavVolume::FlushDebugDraw() const
 {
@@ -745,12 +751,55 @@ void ASVONavVolume::FlushDebugDraw() const
 	FlushDebugStrings(GetWorld());
 }
 
+void ASVONavVolume::AddDebugNavPath(const FSVONavDebugPath DebugPath)
+{
+	DebugPaths.Add(DebugPath);
+	RequestOctreeDebugDraw();
+}
+
 void ASVONavVolume::RequestOctreeDebugDraw()
 {
 	bDebugDrawRequested = true;
 
 	DebugDrawOctree();
 	bDebugDrawRequested = false;
+}
+
+void ASVONavVolume::DebugDrawOctree()
+{
+	GetWorld()->PersistentLineBatcher->SetComponentTickEnabled(false);
+	FlushDebugDraw();
+	if (OctreeValid())
+	{
+		for (int32 I = 0; I < Octree.Layers.Num(); I++)
+		{
+			for (int32 J = 0; J < Octree.Layers[I].Num(); J++)
+			{
+				FVector NodeLocation;
+				GetNodeLocation(I, Octree.Layers[I][J].MortonCode, NodeLocation);
+				if (I == 0 && bDisplayLeaves || I > 0 && bDisplayLayers)
+				{
+					DebugDrawVoxel(NodeLocation, FVector(VoxelHalfSizes[I]), GetLayerColour(I));
+				}
+				if (bDisplayMortonCodes)
+				{
+					DebugDrawMortonCode(NodeLocation,
+                                        FString::FromInt(I) + ":" + FString::FromInt(Octree.Layers[I][J].MortonCode),
+                                        MortonCodeColour);
+				}
+			}
+		}
+
+		// Links must be rebuilt to draw Link adjacency
+		if (bDisplayNeighbourLink)
+		{
+			DebugLinks.Empty();
+			for (int32 I = NumLayers - 2; I >= 0; I--) BuildLinks(I);
+			DebugDrawNeighbourLink();
+		}
+
+		if (bDisplayLeafOcclusion) DebugDrawLeafOcclusion();
+	}
 }
 
 void ASVONavVolume::DebugDrawVolume() const
@@ -904,17 +953,24 @@ void ASVONavVolume::DebugDrawBoundsMesh(FBox Box, FColor Colour) const
 	DrawDebugMesh(GetWorld(), Vertices, Indices, Colour, true, -1.0, 0);
 }
 
-FColor ASVONavVolume::GetLayerColour(const int32 LayerIndex) const
+void ASVONavVolume::EditorApplyTranslation(const FVector& DeltaTranslation, bool bAltDown, bool bShiftDown,
+                                           bool bCtrlDown)
 {
-	const float Ratio = LayerColours.Num() / static_cast<float>(NumLayers) * LayerIndex;
-	const int32 FirstIndex = FMath::FloorToInt(Ratio);
-	const int32 LastIndex = FMath::Min(FMath::CeilToInt(Ratio), LayerColours.Num() - 1);
-	const float Lerp = FMath::Fmod(Ratio, 1);
-	return FColor(
-		FMath::Lerp(LayerColours[FirstIndex].R, LayerColours[LastIndex].R, Lerp),
-		FMath::Lerp(LayerColours[FirstIndex].G, LayerColours[LastIndex].G, Lerp),
-		FMath::Lerp(LayerColours[FirstIndex].B, LayerColours[LastIndex].B, Lerp)
-	);
+	Super::EditorApplyTranslation(DeltaTranslation, bAltDown, bShiftDown, bCtrlDown);
+	Initialise();
+}
+
+void ASVONavVolume::EditorApplyRotation(const FRotator& DeltaRotation, bool bAltDown, bool bShiftDown, bool bCtrlDown)
+{
+	Super::EditorApplyRotation(DeltaRotation, bAltDown, bShiftDown, bCtrlDown);
+	Initialise();
+}
+
+void ASVONavVolume::EditorApplyScale(const FVector& DeltaScale, const FVector* PivotLocation, bool bAltDown,
+                                     bool bShiftDown, bool bCtrlDown)
+{
+	Super::EditorApplyScale(DeltaScale, PivotLocation, bAltDown, bShiftDown, bCtrlDown);
+	Initialise();
 }
 
 #endif
