@@ -11,28 +11,28 @@ class FSVONavFindPathTask : public FNonAbandonableTask
 
 public:
 	FSVONavFindPathTask(
-		ASVONavVolume& Volume,
-		UWorld* World,
-		const FSVONavLink StartLink,
-		const FSVONavLink TargetLink,
-		const FVector& StartLocation,
-		const FVector& TargetLocation,
-		FSVONavPathFindingConfig& Config,
-		FSVONavPath& Path,
-		FThreadSafeBool& CompleteFlag,
-		const FFindPathTaskCompleteDynamicDelegate Complete,
-		bool DrawDebug)
-		: Volume(Volume),
-		  World(World),
-		  StartLink(StartLink),
-		  TargetLink(TargetLink),
-		  StartLocation(StartLocation),
-		  TargetLocation(TargetLocation),
-		  Config(Config),
-		  Path(Path),
-		  CompleteFlag(CompleteFlag),
-		  TaskComplete(Complete),
-		  DrawDebug(DrawDebug)
+	ASVONavVolume& InVolume,
+		UWorld* InWorld,
+		const FSVONavLink InStartLink,
+		const FSVONavLink InTargetLink,
+		const FVector& InStartLocation,
+		const FVector& InTargetLocation,
+		FSVONavPathFindingConfig& InConfig,
+		FSVONavPathSharedPtr* InPath,
+		FThreadSafeBool& InCompleteFlag,
+		/*const FFindPathTaskCompleteDynamicDelegate Complete,*/
+		const bool InDrawDebug)
+		: Volume(InVolume),
+		  World(InWorld),
+		  StartLink(InStartLink),
+		  TargetLink(InTargetLink),
+		  StartLocation(InStartLocation),
+		  TargetLocation(InTargetLocation),
+		  Config(InConfig),
+		  Path(InPath),
+		  CompleteFlag(InCompleteFlag),
+		  //TaskComplete(Complete),
+		  DrawDebug(InDrawDebug)
 	{
 	}
 
@@ -46,9 +46,9 @@ protected:
 	FVector TargetLocation;
 	FSVONavPathFindingConfig Config;
 
-	FSVONavPath& Path;
-	FFindPathTaskCompleteDynamicDelegate TaskComplete;
+	FSVONavPathSharedPtr* Path;
 	FThreadSafeBool& CompleteFlag;
+	//FFindPathTaskCompleteDynamicDelegate TaskComplete;
 
 	bool DrawDebug;
 

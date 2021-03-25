@@ -449,6 +449,20 @@ bool ASVONavVolume::GetLink(const FVector& Location, FSVONavLink& Link)
 	return false;
 }
 
+bool ASVONavVolume::FindAccessibleLink(FVector& Location, FSVONavLink& Link)
+{
+	for (int32 I = 1; I < 4; I++) {
+		for (int32 J = 0; J < 6; J++) {
+			FVector OffsetLocation = Location + FVector(Directions[J] * Clearance * I);
+			if (GetLink(OffsetLocation,  Link)) {
+				Location = OffsetLocation;
+				return true;
+			}	
+		}
+	}
+	return false;
+}
+
 const FSVONavNode& ASVONavVolume::GetNode(const FSVONavLink& Link) const
 {
 	return Octree.Layers[Link.LayerIndex][Link.NodeIndex];
@@ -456,7 +470,7 @@ const FSVONavNode& ASVONavVolume::GetNode(const FSVONavLink& Link) const
 
 bool ASVONavVolume::LinkNodeIsValid(const FSVONavLink& Link) const
 {
-	if (Link.LayerIndex >= Octree.Layers.Num()) return false;
+	if (static_cast<int32>(Link.LayerIndex) >= Octree.Layers.Num()) return false;
 	return Link.IsValid() && static_cast<int32>(Link.NodeIndex) < Octree.Layers[Link.LayerIndex].Num();
 }
 

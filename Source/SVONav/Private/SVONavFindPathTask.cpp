@@ -15,9 +15,8 @@ void FSVONavFindPathTask::DoWork()
 		PathFinder.ApplyPathSmoothing(Path, Config);
 
 #if WITH_EDITOR
-		if(DrawDebug) PathFinder.RequestNavPathDebugDraw(Path);
+		if(DrawDebug) PathFinder.DrawDebug(World, Volume, Path);
 #endif
 	});
-	
-	TaskComplete.Execute(Path.Points.Num() > 0);
+	CompleteFlag = true;
 }

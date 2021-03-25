@@ -1,10 +1,12 @@
 ﻿#include "SVONavPathFinder.h"
 
+#include "DrawDebugHelpers.h"
+#include "SVONav/SVONav.h"
 #include "SVONavVolume.h"
 
 int SVONavPathFinder::FindPath(const FSVONavLink& InStartLink, const FSVONavLink& InTargetLink,
                                const FVector& InStartLocation, const FVector& InTargetLocation,
-                               FSVONavPathFindingConfig InConfig, FSVONavPath& InPath)
+                               FSVONavPathFindingConfig InConfig, FSVONavPathSharedPtr* InPath)
 {
 	//init
 	OpenSet.Empty();
@@ -13,15 +15,15 @@ int SVONavPathFinder::FindPath(const FSVONavLink& InStartLink, const FSVONavLink
 	FScore.Empty();
 	GScore.Empty();
 	CurrentLink = FSVONavLink();
-	InPath.Empty();
+	InPath->Get()->Empty();
 
 	StartLink = InStartLink;
 	TargetLink = InTargetLink;
 
-	OpenSet.Add(StartLink);
-	Parent.Add(StartLink, StartLink);
-	FScore.Add(StartLink, 0.f);
-	GScore.Add(StartLink, HeuristicScore(StartLink, TargetLink));
+	OpenSet.Add(InStartLink);
+	Parent.Add(InStartLink, InStartLink);
+	FScore.Add(InStartLink, 0.f);
+	GScore.Add(InStartLink, HeuristicScore(InStartLink, TargetLink));
 
 	//iteration
 	int Iterations = 0;
@@ -43,6 +45,10 @@ int SVONavPathFinder::FindPath(const FSVONavLink& InStartLink, const FSVONavLink
 		if (CurrentLink.NodeIndex == TargetLink.NodeIndex)
 		{
 			BuildPath(Parent, CurrentLink, InStartLocation, InTargetLocation, InPath);
+#if WITH_EDITOR
+			UE_LOG(LogSVONav, Display, TEXT("Pathfinding complete, iterations : %i"), Iterations);
+			
+#endif
 			return 1;
 		}
 
@@ -67,31 +73,31 @@ int SVONavPathFinder::FindPath(const FSVONavLink& InStartLink, const FSVONavLink
 	}
 
 #if WITH_EDITOR
-	UE_LOG(LogTemp, Display, TEXT("Pathfinding failed, iterations : %i"), Iterations);
+	UE_LOG(LogSVONav, Display, TEXT("Pathfinding failed, iterations : %i"), Iterations);
 #endif
+	return 0;
 }
 
-void SVONavPathFinder::ApplyPathPruning(FSVONavPath& Path, const FSVONavPathFindingConfig Config) const
+void SVONavPathFinder::ApplyPathPruning(FSVONavPathSharedPtr* InPath, const FSVONavPathFindingConfig InConfig) const
 {
 }
 
-void SVONavPathFinder::ApplyPathLineOfSight(FSVONavPath& Path, AActor* Target, float MinimumDistance) const
+void SVONavPathFinder::ApplyPathLineOfSight(FSVONavPathSharedPtr* InPath, AActor* Target, float MinimumDistance) const
 {
 }
 
-void SVONavPathFinder::ApplyPathSmoothing(FSVONavPath& Path, FSVONavPathFindingConfig Config)
+void SVONavPathFinder::ApplyPathSmoothing(FSVONavPathSharedPtr* InPath, FSVONavPathFindingConfig InConfig)
 {
 }
 
 
-
-float SVONavPathFinder::HeuristicScore(const FSVONavLink& StartLink, const FSVONavLink& TargetLink)
+float SVONavPathFinder::HeuristicScore(const FSVONavLink& InStartLink, const FSVONavLink& InTargetLink)
 {
 	float Score = 0.f;
 	FVector StartLocation, TargetLocation;
 
-	SVOVolume.GetLinkLocation(StartLink, StartLocation);
-	SVOVolume.GetLinkLocation(TargetLink, TargetLocation);
+	SVOVolume.GetLinkLocation(InStartLink, StartLocation);
+	SVOVolume.GetLinkLocation(InTargetLink, TargetLocation);
 
 	switch (Config.Heuristic)
 	{
@@ -106,7 +112,7 @@ float SVONavPathFinder::HeuristicScore(const FSVONavLink& StartLink, const FSVON
 		break;
 	}
 
-	Score *= (1.0f - (static_cast<float>(TargetLink.GetLayerIndex()) / static_cast<float>(SVOVolume.NumLayers)) * Config
+	Score *= (1.0f - (static_cast<float>(InTargetLink.GetLayerIndex()) / static_cast<float>(SVOVolume.NumLayers)) * Config
 		.NodeSizePreference);
 	return Score;
 }
@@ -123,13 +129,12 @@ float SVONavPathFinder::GetCost(const FSVONavLink& InStartLink, const FSVONavLin
 	else
 	{
 		FVector StartPos(0.f), TargetPos(0.f);
-		const FSVONavNode& StartNode = SVOVolume.GetNode(InStartLink);
-		const FSVONavNode& EndNode = SVOVolume.GetNode(InTargetLink);
 		SVOVolume.GetLinkLocation(InStartLink, StartPos);
 		SVOVolume.GetLinkLocation(InTargetLink, TargetPos);
 		Cost -= static_cast<float>(InTargetLink.GetLayerIndex()) / static_cast<float>(SVOVolume.NumLayers) * Config.
 			NodeSizePreference;
-		if (Config.Heuristic == ESVONavHeuristic::Euclidean) {
+		if (Config.Heuristic == ESVONavHeuristic::Euclidean)
+		{
 			Cost *= (StartPos - TargetPos).Size();
 		}
 	}
@@ -166,51 +171,86 @@ void SVONavPathFinder::ProcessLink(const FSVONavLink& NeighbourLink)
 }
 
 void SVONavPathFinder::BuildPath(TMap<FSVONavLink, FSVONavLink>& InParent, FSVONavLink InCurrentLink,
-                                 const FVector& InStartLocation, const FVector& InTargetLocation, FSVONavPath& InPath)
+                                 const FVector& InStartLocation, const FVector& InTargetLocation,
+                                 FSVONavPathSharedPtr* InPath)
 {
-	FSVONavPathPoint PathPoint;
+	FSVONavPathPoint Location;
+
+	TArray<FSVONavPathPoint> Points;
+
+	if (!InPath || !InPath->IsValid())
+		return;
 
 	while (InParent.Contains(InCurrentLink) && !(InCurrentLink == InParent[InCurrentLink]))
 	{
 		InCurrentLink = InParent[InCurrentLink];
-		SVOVolume.GetLinkLocation(InCurrentLink, PathPoint.Location);
-		InPath.Points.Insert(PathPoint, 0);
-		const FSVONavNode& Node = SVOVolume.GetNode(InCurrentLink);
+		SVOVolume.GetLinkLocation(InCurrentLink, Location.Location);
+		Points.Add(Location);
+		const FSVONavNode& node = SVOVolume.GetNode(InCurrentLink);
+		// This is rank. I really should sort the layers out
 		if (InCurrentLink.GetLayerIndex() == 0)
 		{
-			if (!Node.HasChildren()) InPath.Points[0].Layer = 1;
-			else InPath.Points[0].Layer = 0;
+			if (!node.HasChildren())
+				Points[Points.Num() - 1].Layer = 1;
+			else
+				Points[Points.Num() - 1].Layer = 0;
 		}
 		else
 		{
-			InPath.Points[0].Layer = InCurrentLink.GetLayerIndex() + 1;
+			Points[Points.Num() - 1].Layer = InCurrentLink.GetLayerIndex() + 1;
 		}
 	}
+	if (Points.Num() > 1)
+	{
+		Points[0].Location = InTargetLocation;
+		Points[Points.Num() - 1].Location = InStartLocation;
+	}
+	else // If start and end are in the same voxel, just use the start and target positions.
+	{
+		if (Points.Num() == 0)
+			Points.Emplace();
 
-	if (InPath.Points.Num() > 1)
-	{
-		InPath.Points[0].Location = InStartLocation;
-		InPath.Points[InPath.Points.Num() - 1].Location = InTargetLocation;
+		Points[0].Location = InTargetLocation;
+		Points.Emplace(InStartLocation, StartLink.GetLayerIndex());
 	}
-	else
-	{
-		if (InPath.Points.Num() == 0) InPath.Points.Emplace();
-		InPath.Points[0].Location = InTargetLocation;
-		InPath.Points.Emplace(InStartLocation, StartLink.GetLayerIndex());
-	}
+
+	InPath->Get()->SetPoints(Points);
 }
 
 #if WITH_EDITOR
 
-void SVONavPathFinder::RequestNavPathDebugDraw(const FSVONavPath Path) const
+void SVONavPathFinder::DrawDebug(UWorld* InWorld, const ASVONavVolume& Volume, FSVONavPathSharedPtr* InPath) const
 {
-	if (!World || !IsValid(&SVOVolume) || Path.Points.Num() < 2) return;
+	TArray<FSVONavPathPoint> Points = InPath->Get()->GetPoints();
+	for (int i = 0; i < Points.Num(); i++)
+	{
+		FSVONavPathPoint& Point = Points[i];
+
+		if (i < Points.Num() - 1)
+		{
+			FVector OffSet(0.f);
+			//if (i == 0)
+			//offSet.Z -= 300.f;
+			float Size = Point.Layer == 0 ? Volume.GetVoxelScale(Point.Layer) * 0.25f : Volume.GetVoxelScale(Point.Layer) * 0.5f;
+
+			//DrawDebugBox(InWorld, Point.Location, FVector(Size), Volume.GetLayerColour(Point.Layer), true, -1.f, 0, 10.f);
+
+			//DrawDebugSphere(InWorld, Point.Location + OffSet, 30.f, 20, FColor::Cyan, true, -1.f, 0, 20.f);
+
+			DrawDebugLine(InWorld, Point.Location + OffSet, Points[i+1].Location, FColor::Cyan, true, -1.f, 0, 20.f);
+		}
+	}
+}
+
+void SVONavPathFinder::RequestNavPathDebugDraw(const FSVONavPathSharedPtr* InPath) const
+{
+	if (!World || !IsValid(&SVOVolume) || InPath->Get()->Points.Num() < 2) return;
 	FSVONavDebugPath DebugPath;
-	for (auto& Point: Path.Points) DebugPath.Points.Add(Point.Location);
+	for (auto& Point : InPath->Get()->Points) DebugPath.Points.Add(Point.Location);
 	//hardcore debug visual
 	DebugPath.Color = FColor(0, 255, 255);
 	DebugPath.LineScale = 10.0;
-	
+
 	SVOVolume.AddDebugNavPath(DebugPath);
 }
 

@@ -3,8 +3,17 @@
 
 #include "SVONavComponent.h"
 #include "SVONavVolume.h"
+#include "SVONavFindPathTask.h"
 #include "Kismet/GameplayStatics.h"
+#include "SVONavPathFinder.h"
+#include "SVONav/SVONav.h"
 #include "Kismet/KismetMathLibrary.h"
+
+#include <Runtime/Engine/Public/DrawDebugHelpers.h>
+#include <Runtime/Engine/Classes/GameFramework/Actor.h>
+#include <Runtime/Engine/Classes/Kismet/GameplayStatics.h>
+#include <Runtime/Engine/Classes/Components/LineBatchComponent.h>
+#include <Runtime/NavigationSystem/Public/NavigationData.h>
 
 USVONavComponent::USVONavComponent(const FObjectInitializer& ObjectInitializer)
 {
@@ -30,35 +39,321 @@ void USVONavComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	// ...
 }
 
-void USVONavComponent::ExecutePathFinding(const FSVONavLink& StartEdge, const FSVONavLink& TargetEdge,
-                                          const FVector& StartLocation, const FVector& TargetLocation,
-                                          FSVONavPathFindingConfig Config, FSVONavPath& Path)
+void USVONavComponent::FindPathAsync(const FVector& StartLocation, const FVector& TargetLocation,
+                                     const bool bCheckLineOfSight, FThreadSafeBool& CompleteFlag,
+                                     FSVONavPathSharedPtr* NavPath,
+                                     /*const FFindPathTaskCompleteDynamicDelegate OnComplete,*/
+                                     ESVONavPathFindingCallResult& Result)
 {
+FSVONavLink StartLink;
+	FSVONavLink TargetLink;
+	FVector LegalStart = StartLocation;
+	FVector LegalTarget = TargetLocation;
+
+	// Error checking before task start
+	if (!VolumeContainsOctree() || !VolumeContainsOwner()) FindVolume();
+	if (!VolumeContainsOwner())
+	{
+		Result = ESVONavPathFindingCallResult::NoVolume;
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Error,
+		                                 TEXT(
+			                                 "%s: Find path cannot initialise. Nav3D component owner is not inside a Nav3D volume"
+		                                 ), *GetOwner()->GetName());
+#endif
+
+		return;
+	}
+	// Check that an octree has been found
+	if (!VolumeContainsOctree())
+	{
+		Result = ESVONavPathFindingCallResult::NoOctree;
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Error,
+		                                 TEXT("%s: Find path cannot initialise. Nav3D octree has not been built"),
+		                                 *GetOwner()->GetName());
+#endif
+
+		return;
+	}
+
+	if (bCheckLineOfSight)
+	{
+		// If there is a line of sight plus clearance with the target then no path finding is required
+		FCollisionQueryParams CollisionQueryParams;
+		CollisionQueryParams.bTraceComplex = true;
+		CollisionQueryParams.TraceTag = "Nav3DLineOfSightCheck";
+		FHitResult HitResult;
+		float Radius = FMath::Max(50.f, GetOwner()->GetComponentsBoundingBox(true).GetExtent().GetMax());
+		GetWorld()->SweepSingleByChannel(
+			HitResult,
+			StartLocation,
+			TargetLocation,
+			FQuat::Identity,
+			Volume->CollisionChannel,
+			FCollisionShape::MakeSphere(Radius),
+			CollisionQueryParams
+		);
+
+		if (!HitResult.bBlockingHit)
+		{
+			Result = ESVONavPathFindingCallResult::Reachable;
+
+#if WITH_EDITOR
+			if (bDebugLogPathfinding) UE_LOG(LogTemp, Error,
+			                                 TEXT(
+				                                 "%s: Find path unnecessary. Nav3D component owner has a clear line of sight to target"
+			                                 ), *GetOwner()->GetName());
+#endif
+
+			return;
+		}
+	}
+
+	if (!Volume->GetLink(StartLocation, StartLink))
+	{
+		Result = ESVONavPathFindingCallResult::NoStart;
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Warning, TEXT("%s: Failed to find start Link. Searching nearby..."),
+		                                 *GetOwner()->GetName());
+#endif
+
+		if (!Volume->FindAccessibleLink(LegalStart, StartLink))
+		{
+#if WITH_EDITOR
+			if (bDebugLogPathfinding) UE_LOG(LogTemp, Error, TEXT("%s: No accessible adjacent Link found"),
+			                                 *GetOwner()->GetName());
+#endif
+
+			return;
+		}
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Display, TEXT("%s: Found legal start location"),
+		                                 *GetOwner()->GetName());
+#endif
+	}
+
+	if (!Volume->GetLink(TargetLocation, TargetLink))
+	{
+		Result = ESVONavPathFindingCallResult::NoTarget;
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Warning, TEXT("%s: Failed to find target Link. Searching nearby..."),
+		                                 *GetOwner()->GetName());
+#endif
+
+		if (!Volume->FindAccessibleLink(LegalTarget, TargetLink))
+		{
+#if WITH_EDITOR
+			if (bDebugLogPathfinding) UE_LOG(LogTemp, Error, TEXT("%s: No accessible Links found near target"),
+			                                 *GetOwner()->GetName());
+#endif
+
+			return;
+		}
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Display, TEXT("%s: Found accessible target location"),
+		                                 *GetOwner()->GetName());
+#endif
+	}
+
+	FSVONavPathFindingConfig Config;
+	Config.Heuristic = Heuristic;
+	Config.EstimateWeight = HeuristicWeight;
+	Config.NodeSizePreference = NodeSizePreference;
+	Config.PathPruning = PathPruning;
+	Config.PathSmoothing = PathSmoothing;
+	Config.UseUnitCost = bUseUnitCost;
+	Config.UnitCost = UnitCost;
+
+
+	(new FAutoDeleteAsyncTask<FSVONavFindPathTask>(
+		*Volume,
+		GetWorld(),
+		StartLink,
+		TargetLink,
+		LegalStart,
+		LegalTarget,
+		Config,
+		NavPath,
+		CompleteFlag,
+		/*OnComplete,*/
+		bDebugDrawEnabled))->StartBackgroundTask();
+	Result = ESVONavPathFindingCallResult::Success;
+
+#if WITH_EDITOR
+	if (bDebugLogPathfinding) UE_LOG(LogTemp, Display, TEXT("%s: Find path task called successfully"),
+	                                 *GetOwner()->GetName());
+#endif
 }
 
-float USVONavComponent::HeuristicScore(FSVONavLink StartEdge, FSVONavLink TargetEdge,
-                                       FSVONavPathFindingConfig Config) const
+bool USVONavComponent::FindPathImmediate(const FVector& StartLocation, const FVector& TargetLocation,
+                                         const bool bCheckLineOfSight, FSVONavPathSharedPtr* NavPath,
+                                         ESVONavPathFindingCallResult& Result)
 {
+	FSVONavLink StartLink;
+	FSVONavLink TargetLink;
+	FVector LegalStart = StartLocation;
+	FVector LegalTarget = TargetLocation;
+
+	// Error checking before task start
+	if (!VolumeContainsOctree() || !VolumeContainsOwner()) FindVolume();
+	if (!VolumeContainsOwner())
+	{
+		Result = ESVONavPathFindingCallResult::NoVolume;
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Error,
+		                                 TEXT(
+			                                 "%s: Find path cannot initialise. Nav3D component owner is not inside a Nav3D volume"
+		                                 ), *GetOwner()->GetName());
+#endif
+
+		return false;
+	}
+	// Check that an octree has been found
+	if (!VolumeContainsOctree())
+	{
+		Result = ESVONavPathFindingCallResult::NoOctree;
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Error,
+		                                 TEXT("%s: Find path cannot initialise. Nav3D octree has not been built"),
+		                                 *GetOwner()->GetName());
+#endif
+
+		return false;
+	}
+
+	if (bCheckLineOfSight)
+	{
+		// If there is a line of sight plus clearance with the target then no path finding is required
+		FCollisionQueryParams CollisionQueryParams;
+		CollisionQueryParams.bTraceComplex = true;
+		CollisionQueryParams.TraceTag = "Nav3DLineOfSightCheck";
+		FHitResult HitResult;
+		float Radius = FMath::Max(50.f, GetOwner()->GetComponentsBoundingBox(true).GetExtent().GetMax());
+		GetWorld()->SweepSingleByChannel(
+			HitResult,
+			StartLocation,
+			TargetLocation,
+			FQuat::Identity,
+			Volume->CollisionChannel,
+			FCollisionShape::MakeSphere(Radius),
+			CollisionQueryParams
+		);
+
+		if (!HitResult.bBlockingHit)
+		{
+			Result = ESVONavPathFindingCallResult::Reachable;
+
+#if WITH_EDITOR
+			if (bDebugLogPathfinding) UE_LOG(LogTemp, Error,
+			                                 TEXT(
+				                                 "%s: Find path unnecessary. Nav3D component owner has a clear line of sight to target"
+			                                 ), *GetOwner()->GetName());
+#endif
+
+			return false;
+		}
+	}
+
+	if (!Volume->GetLink(StartLocation, StartLink))
+	{
+		Result = ESVONavPathFindingCallResult::NoStart;
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Warning, TEXT("%s: Failed to find start Link. Searching nearby..."),
+		                                 *GetOwner()->GetName());
+#endif
+
+		if (!Volume->FindAccessibleLink(LegalStart, StartLink))
+		{
+#if WITH_EDITOR
+			if (bDebugLogPathfinding) UE_LOG(LogTemp, Error, TEXT("%s: No accessible adjacent Link found"),
+			                                 *GetOwner()->GetName());
+#endif
+
+			return false;
+		}
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Display, TEXT("%s: Found legal start location"),
+		                                 *GetOwner()->GetName());
+#endif
+	}
+
+	if (!Volume->GetLink(TargetLocation, TargetLink))
+	{
+		Result = ESVONavPathFindingCallResult::NoTarget;
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Warning, TEXT("%s: Failed to find target Link. Searching nearby..."),
+		                                 *GetOwner()->GetName());
+#endif
+
+		if (!Volume->FindAccessibleLink(LegalTarget, TargetLink))
+		{
+#if WITH_EDITOR
+			if (bDebugLogPathfinding) UE_LOG(LogTemp, Error, TEXT("%s: No accessible Links found near target"),
+			                                 *GetOwner()->GetName());
+#endif
+
+			return false;
+		}
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Display, TEXT("%s: Found accessible target location"),
+		                                 *GetOwner()->GetName());
+#endif
+	}
+
+	FSVONavPath* Path = NavPath->Get();
+
+	Path->Empty();
+	
+	FSVONavPathFindingConfig Config;
+	Config.Heuristic = Heuristic;
+	Config.EstimateWeight = HeuristicWeight;
+	Config.NodeSizePreference = NodeSizePreference;
+	Config.PathPruning = PathPruning;
+	Config.PathSmoothing = PathSmoothing;
+	Config.UseUnitCost = bUseUnitCost;
+	Config.UnitCost = UnitCost;
+
+	SVONavPathFinder PathFinder(GetWorld(), *Volume, Config);
+
+	int PathResult = PathFinder.FindPath(StartLink, TargetLink, LegalStart, LegalTarget, Config, NavPath);
+	
+	Result = ESVONavPathFindingCallResult::Success;
+
+#if WITH_EDITOR
+	if (bDebugLogPathfinding) UE_LOG(LogTemp, Display, TEXT("%s: Find path task called successfully"),
+	                                 *GetOwner()->GetName());
+	if(bDebugDrawEnabled) PathFinder.DrawDebug(GetWorld(), *Volume, NavPath);
+#endif
+
+	return true;
 }
 
-void USVONavComponent::AddPathStartLocation(FSVONavPath& Path) const
+FVector USVONavComponent::GetPawnPosition() const
 {
-}
+	FVector Result;
 
-void USVONavComponent::ApplyPathPruning(FSVONavPath& Path, const FSVONavPathFindingConfig Config) const
-{
-}
+	AController* Controller = Cast<AController>(GetOwner());
 
-void USVONavComponent::ApplyPathLineOfSight(FSVONavPath& Path, AActor* Target, float MinimumDistance) const
-{
-}
+	if (Controller)
+	{
+		if (APawn* pawn = Controller->GetPawn())
+			Result = pawn->GetActorLocation();
+	}
 
-void USVONavComponent::ApplyPathSmoothing(FSVONavPath& Path, FSVONavPathFindingConfig Config)
-{
-}
-
-void USVONavComponent::RequestNavPathDebugDraw(const FSVONavPath Path) const
-{
+	return Result;
 }
 
 bool USVONavComponent::VolumeContainsOctree() const

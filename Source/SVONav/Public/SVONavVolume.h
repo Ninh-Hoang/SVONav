@@ -141,6 +141,7 @@ public:
     void GetMortonVoxel(const FVector& Location, int32 LayerIndex, FIntVector& MortonLocation) const;
 	FBox GetBoundingBox() const;
 	bool GetLink(const FVector& Location, FSVONavLink& Link);
+	bool FindAccessibleLink(FVector& Location, FSVONavLink& Link);
 	float GetVoxelScale(uint8 LayerIndex) const;
 	const TArray<FSVONavNode>& GetLayer(uint8 LayerIndex) const { return Octree.Layers[LayerIndex]; };
 	const FSVONavNode& GetNode(const FSVONavLink& Link) const;
@@ -157,6 +158,7 @@ public:
 	void AddDebugNavPath(const FSVONavDebugPath DebugPath);
 	void RequestOctreeDebugDraw();
 	void DebugDrawOctree();
+	FColor GetLayerColour(const int32 LayerIndex) const;
 
 private:
 	FSVONavOctree Octree;
@@ -209,6 +211,5 @@ private:
 	void DebugDrawLeafOcclusion();
 	void DebugDrawNeighbourLink() const;
 	void DebugDrawBoundsMesh(FBox Box, FColor Colour) const;
-	FColor GetLayerColour(const int32 LayerIndex) const;
 };
 

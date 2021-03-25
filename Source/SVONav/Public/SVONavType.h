@@ -2,25 +2,31 @@
 
 #include "CoreMinimal.h"
 #include "SVONav/Private/libmorton/morton.h"
-#include "SVONavType.generated.h"
+#include "NavigationSystem/Public/NavigationData.h"
+#include "SVONavDefines.h"
 
+#include "SVONavType.generated.h"
 //OCTREE
 
 struct SVONAV_API FSVONavLink
 {
-	uint8 LayerIndex:4;
-	uint_fast32_t NodeIndex:22;
-	uint8 SubNodeIndex:6;
+	unsigned int LayerIndex:4;
+	unsigned int NodeIndex:22;
+	unsigned int SubNodeIndex:6;
 
 	FSVONavLink() :
 		LayerIndex(15),
 		NodeIndex(0),
-		SubNodeIndex(0){}
+		SubNodeIndex(0)
+	{
+	}
 
 	FSVONavLink(const uint8 LayerIndex, const uint_fast32_t NodeIndex, const uint8 SubNodeIndex) :
 		LayerIndex(LayerIndex),
 		NodeIndex(NodeIndex),
-		SubNodeIndex(SubNodeIndex){}
+		SubNodeIndex(SubNodeIndex)
+	{
+	}
 
 	uint8 GetLayerIndex() const { return LayerIndex; }
 	void SetLayerIndex(const uint8 NewLayerIndex) { LayerIndex = NewLayerIndex; }
@@ -85,7 +91,7 @@ FORCEINLINE FArchive& operator<<(FArchive& Archive, FSVONavLeafNode& Leaf)
 
 struct SVONAV_API FSVONavNode
 {
-	uint_fast64_t MortonCode;
+	mortoncode_t MortonCode;
 	FSVONavLink Parent;
 	FSVONavLink FirstChild;
 	FSVONavLink Neighbours[6];
@@ -227,14 +233,16 @@ struct SVONAV_API FSVONavPathPoint
 	int32 Layer;
 
 	FSVONavPathPoint() :
-        Location(FVector::ZeroVector),
-        Layer(-1)
+		Location(FVector::ZeroVector),
+		Layer(-1)
 	{
 	}
 
 	FSVONavPathPoint(const FVector& Location, const int32 LayerIndex) :
-        Location(Location),
-        Layer(LayerIndex){}
+		Location(Location),
+		Layer(LayerIndex)
+	{
+	}
 };
 
 USTRUCT(BlueprintType)
@@ -247,9 +255,18 @@ struct SVONAV_API FSVONavPath
 
 	void Add(const FSVONavPathPoint& Point) { Points.Add(Point); }
 	void Empty() { Points.Empty(); }
-	TArray<FSVONavPathPoint> GetPoints() const { return Points; }
+	TArray<FSVONavPathPoint>& GetPoints() { return Points; }
 	void SetPoints(const TArray<FSVONavPathPoint> NewPoints) { Points = NewPoints; }
 	void GetPath(TArray<FVector>& Path) { for (const auto& Point : Points) { Path.Add(Point.Location); } }
+
+	// Copy the path positions into a standard navigation path
+	void CreateNavPath(FNavigationPath& OutPath)
+	{
+		for (const FSVONavPathPoint& Point : Points)
+		{
+			OutPath.GetPathPoints().Add(Point.Location);
+		}
+	}
 };
 
 typedef TSharedPtr<FSVONavPath, ESPMode::ThreadSafe> FSVONavPathSharedPtr;
@@ -262,34 +279,37 @@ enum class ESVONavHeuristic: uint8
 };
 
 UENUM()
-enum class ESVONavPathFindingCallResult: uint8 {
+enum class ESVONavPathFindingCallResult: uint8
+{
 	Success UMETA(DisplayName="Call Success", ToolTip="Find path task was called successfully."),
-    Reachable UMETA(DisplayName="Target in line of sight", ToolTip="Find path unnecessary. Target is already reachable."),
-    NoVolume UMETA(DisplayName="Volume not found", ToolTip="SVONav component owner is not inside a SVONav volume."),
-    NoOctree UMETA(DisplayName="Octree not found", ToolTip="SVONav octree has not been built."),
-    NoStart UMETA(DisplayName="Start link not found", ToolTip="Failed to find start link."),
-    NoTarget UMETA(DisplayName="Target link not found", ToolTip="Failed to find target link.")
+	Reachable UMETA(DisplayName="Target in line of sight", ToolTip="Find path unnecessary. Target is already reachable."),
+	NoVolume UMETA(DisplayName="Volume not found", ToolTip="SVONav component owner is not inside a SVONav volume."),
+	NoOctree UMETA(DisplayName="Octree not found", ToolTip="SVONav octree has not been built."),
+	NoStart UMETA(DisplayName="Start link not found", ToolTip="Failed to find start link."),
+	NoTarget UMETA(DisplayName="Target link not found", ToolTip="Failed to find target link.")
 };
 
 UENUM()
-enum class ESVONavFindLineOfSightCallResult: uint8 {
+enum class ESVONavFindLineOfSightCallResult: uint8
+{
 	Success UMETA(DisplayName="Call Success", ToolTip="Line of sight task was called successfully."),
-    Visible UMETA(DisplayName="Target in line of sight", ToolTip="Find Line of sight unnecessary. Target is already visible."),
-    NoVolume UMETA(DisplayName="Volume not found", ToolTip="SVONav component owner is not inside a SVONav volume."),
-    NoOctree UMETA(DisplayName="Octree not found", ToolTip="SVONav octree has not been built."),
-    NoStart UMETA(DisplayName="Start link not found", ToolTip="Failed to find start link."),
-    NoTarget UMETA(DisplayName="Target link not found", ToolTip="Failed to find target link.")
+	Visible UMETA(DisplayName="Target in line of sight", ToolTip="Find Line of sight unnecessary. Target is already visible."),
+	NoVolume UMETA(DisplayName="Volume not found", ToolTip="SVONav component owner is not inside a SVONav volume."),
+	NoOctree UMETA(DisplayName="Octree not found", ToolTip="SVONav octree has not been built."),
+	NoStart UMETA(DisplayName="Start link not found", ToolTip="Failed to find start link."),
+	NoTarget UMETA(DisplayName="Target link not found", ToolTip="Failed to find target link.")
 };
 
 UENUM()
-enum class ESVONavPathPruning: uint8 {
+enum class ESVONavPathPruning: uint8
+{
 	None UMETA(DisplayName="None", ToolTip="Do not use path pruning."),
-    WithClearance UMETA(DisplayName="With clearance", ToolTip="Use path pruning with actor radius as clearance."),
-    WithoutClearance UMETA(DisplayName="Without clearance", ToolTip="Use path pruning without clearance.")
+	WithClearance UMETA(DisplayName="With clearance", ToolTip="Use path pruning with actor radius as clearance."),
+	WithoutClearance UMETA(DisplayName="Without clearance", ToolTip="Use path pruning without clearance.")
 };
 
 USTRUCT(BlueprintType)
-struct SVONav_API FSVONavPathFindingConfig
+struct SVONAV_API FSVONavPathFindingConfig
 {
 	GENERATED_BODY()
 
@@ -304,7 +324,7 @@ struct SVONav_API FSVONavPathFindingConfig
 
 	UPROPERTY(BlueprintReadWrite)
 	ESVONavPathPruning PathPruning;
-	
+
 	UPROPERTY(BlueprintReadWrite)
 	int32 PathSmoothing;
 
@@ -315,11 +335,13 @@ struct SVONav_API FSVONavPathFindingConfig
 	float UnitCost;
 
 	FSVONavPathFindingConfig() :
-        EstimateWeight(5.0f),
-        NodeSizePreference(1.0f),
-        Heuristic(ESVONavHeuristic::Euclidean),
-        PathPruning(ESVONavPathPruning::None),
-        PathSmoothing(3),
+		EstimateWeight(5.0f),
+		NodeSizePreference(1.0f),
+		Heuristic(ESVONavHeuristic::Euclidean),
+		PathPruning(ESVONavPathPruning::None),
+		PathSmoothing(3),
 		UseUnitCost(false),
-		UnitCost(1.0f){}
+		UnitCost(1.0f)
+	{
+	}
 };
