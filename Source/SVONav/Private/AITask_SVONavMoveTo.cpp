@@ -398,12 +398,12 @@ void UAITask_SVONavMoveTo::RequestPathAsync()
 	// Request the async path
 	ESVONavPathFindingCallResult CallResult;
 	NavComponent->FindPathAsync(SVONavComponent->GetPawnPosition(),
-	                               MoveRequest.IsMoveToActorRequest()
-		                               ? MoveRequest.GetGoalActor()->GetActorLocation()
-		                               : MoveRequest.GetGoalLocation(),
-	                               CheckLineOfSight,
-	                               AsyncTaskComplete,
-	                               &SVONavPath, CallResult);
+	                            MoveRequest.IsMoveToActorRequest()
+		                            ? MoveRequest.GetGoalActor()->GetActorLocation()
+		                            : MoveRequest.GetGoalLocation(),
+	                            CheckLineOfSight,
+	                            AsyncTaskComplete,
+	                            &SVONavPath, CallResult);
 
 	SVOResult.Code = ESVONavPathfindingRequestResult::Deferred;
 }
@@ -427,11 +427,8 @@ void UAITask_SVONavMoveTo::RequestMove()
 
 	PathFinishDelegateHandle = PFComp->OnRequestFinished.AddUObject(this, &UAITask_SVONavMoveTo::OnRequestFinished);
 	SetObservedPath(Path);
-	check(Path->GetPathPoints().Num()>1);
-	check(Path->IsReady());
-	check(Path->IsUpToDate());
-	check(Path->IsValid());
-	const FAIRequestID RequestID = Path.Get()->IsValid()
+
+	const FAIRequestID RequestID = Path->IsValid()
 		                               ? OwnerController->RequestMove(MoveRequest, Path)
 		                               : FAIRequestID::InvalidRequest;
 	if (RequestID.IsValid())

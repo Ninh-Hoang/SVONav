@@ -89,7 +89,7 @@ public:
 	// The colour for morton code debug drawing
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging|Morton Codes")
 	FColor MortonCodeColour = FColor::Magenta;
-	
+
 	// The scaling factor for morton code debug drawing
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging|Morton Codes")
 	float MortonCodeScale = 1.0f;
@@ -116,7 +116,7 @@ public:
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 	virtual void PostEditUndo() override;
-#endif 
+#endif
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
@@ -138,9 +138,10 @@ public:
 	//getter setter checker
 	bool OctreeValid() const { return NumLayers > 0; }
 	void GetVolumeExtents(const FVector& Location, int32 LayerIndex, FIntVector& Extents) const;
-    void GetMortonVoxel(const FVector& Location, int32 LayerIndex, FIntVector& MortonLocation) const;
+	void GetMortonVoxel(const FVector& Location, int32 LayerIndex, FIntVector& MortonLocation) const;
 	FBox GetBoundingBox() const;
 	bool GetLink(const FVector& Location, FSVONavLink& Link);
+	const FSVONavLeafNode& GetLeafNode(nodeindex_t aIndex) const;
 	bool FindAccessibleLink(FVector& Location, FSVONavLink& Link);
 	float GetVoxelScale(uint8 LayerIndex) const;
 	const TArray<FSVONavNode>& GetLayer(uint8 LayerIndex) const { return Octree.Layers[LayerIndex]; };
@@ -177,32 +178,55 @@ private:
 	TArray<FSVONavDebugLink> DebugLinks;
 	TArray<FSVONavDebugPath> DebugPaths;
 	TArray<FSVONavDebugLocation> DebugLocations;
-#endif	
-	
-	const FIntVector Directions[6] = {{1, 0, 0}, {-1,0,0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
-	const int32 NodeOffsets[6][4] = {{0, 4, 2, 6}, {1, 3, 5, 7}, {0, 1, 4, 5}, {2, 3, 6, 7}, {0, 1, 2, 3}, {4, 5, 6, 7}};
-	const int32 LeafOffsets[6][16] = {{0, 2, 16, 18, 4, 6, 20, 22, 32, 34, 48, 50, 36, 38, 52, 54}, {9, 11, 25, 27, 13, 15, 29, 31, 41, 43, 57, 59, 45, 47, 61, 63},
-		{0, 1, 8, 9, 4, 5, 12, 13, 32, 33, 40, 41, 36, 37, 44, 45}, {18, 19, 26, 27, 22, 23, 30, 31, 50, 51, 58, 59, 54, 55, 62, 63},
-		{0, 1, 8, 9, 2, 3, 10, 11, 16, 17, 24, 25, 18, 19, 26, 27}, {36, 37, 44, 45, 38, 39, 46, 47, 52, 53, 60, 61, 54, 55, 62, 63}};
-	
+#endif
+
+	const FIntVector Directions[6] = {
+		FIntVector(1, 0, 0),
+		FIntVector(-1, 0, 0),
+		FIntVector(0, 1, 0),
+		FIntVector(0, -1, 0),
+		FIntVector(0, 0, 1),
+		FIntVector(0, 0, -1)
+	};
+
+	const int32 NodeOffsets[6][4] = {
+		{0, 4, 2, 6},
+		{1, 3, 5, 7},
+		{0, 1, 4, 5},
+		{2, 3, 6, 7},
+		{0, 1, 2, 3},
+		{4, 5, 6, 7}
+	};
+	const int32 LeafOffsets[6][16] = {
+		{0, 2, 16, 18, 4, 6, 20, 22, 32, 34, 48, 50, 36, 38, 52, 54},
+		{9, 11, 25, 27, 13, 15, 29, 31, 41, 43, 57, 59, 45, 47, 61, 63},
+		{0, 1, 8, 9, 4, 5, 12, 13, 32, 33, 40, 41, 36, 37, 44, 45},
+		{18, 19, 26, 27, 22, 23, 30, 31, 50, 51, 58, 59, 54, 55, 62, 63},
+		{0, 1, 8, 9, 2, 3, 10, 11, 16, 17, 24, 25, 18, 19, 26, 27},
+		{36, 37, 44, 45, 38, 39, 46, 47, 52, 53, 60, 61, 54, 55, 62, 63}
+
+	};
+
 	void UpdateVolume();
 	void InitRasterize();
-	void RasterizeLayer(uint8 LayerIndex);
+	void RasterizeLayer(layerindex_t LayerIndex);
 	void RasterizeLeaf(FVector NodeLocation, int32 LeafIndex);
-	void BuildLinks(uint8 LayerIndex);
+	void BuildLinks(layerindex_t LayerIndex);
 
 	//getter setter checker
-	TArray<FSVONavNode>& GetLayer(const uint8 LayerIndex) { return Octree.Layers[LayerIndex]; };
+	TArray<FSVONavNode>& GetLayer(const layerindex_t LayerIndex) { return Octree.Layers[LayerIndex]; };
 	float GetActualVolumeSize() const { return FMath::Pow(2, VoxelExponent) * (VoxelSize * 4); }
-	int32 GetLayerNodeCount(uint8 LayerIndex) const;
-	int32 GetSegmentNodeCount(uint8 LayerIndex) const;
+	int32 GetLayerNodeCount(layerindex_t LayerIndex) const;
+	int32 GetSegmentNodeCount(layerindex_t LayerIndex) const;
 	bool InDebugRange(FVector Location) const;
-	bool GetNodeIndex(uint8 LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const;
-	int32 GetInsertIndex(uint8 LayerIndex, uint_fast64_t MortonCode) const;
-	bool FindLink(uint8 LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
+	bool GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const;
+	int32 GetInsertIndex(layerindex_t LayerIndex, uint_fast64_t MortonCode) const;
+	bool FindLink(layerindex_t LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
 	bool IsBlocked(const FVector& Location, float Size) const;
 	bool IsBlocked(const FVector& Location, float Size, TArray<FOverlapResult>& OverlapResults) const;
-
+	bool GetIndexForCode(layerindex_t aLayer, mortoncode_t aCode, nodeindex_t& oIndex) const;
+	bool IsAnyMemberBlocked(layerindex_t aLayer, mortoncode_t aCode) const;
+	
 	//debug draw
 	void DebugDrawVolume() const;
 	void DebugDrawVoxel(FVector Location, FVector Extent, FColor Colour) const;
@@ -212,4 +236,3 @@ private:
 	void DebugDrawNeighbourLink() const;
 	void DebugDrawBoundsMesh(FBox Box, FColor Colour) const;
 };
-

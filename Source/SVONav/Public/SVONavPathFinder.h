@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "SVONavComponent.h"
 #include "SVONavType.h"
 
 class ASVONavVolume;
@@ -7,8 +8,12 @@ class ASVONavVolume;
 class SVONAV_API SVONavPathFinder
 {
 public:
-	SVONavPathFinder(UWorld* InWorld, ASVONavVolume& InNavVolume, FSVONavPathFindingConfig& InConfig)
+	SVONavPathFinder(UWorld* InWorld,
+	                 USVONavComponent* InNavComp,
+	                 ASVONavVolume& InNavVolume,
+	                 FSVONavPathFindingConfig& InConfig)
 		: World(InWorld),
+		  NavComp(InNavComp),
 		  SVOVolume(InNavVolume),
 		  Config(InConfig)
 	{
@@ -36,7 +41,7 @@ public:
 
 	void DrawDebug(UWorld* World, const ASVONavVolume& Volume, FSVONavPathSharedPtr* InPath) const;
 #endif
-	
+
 private:
 	// Initialise
 	TSet<FSVONavLink> OpenSet;
@@ -48,8 +53,9 @@ private:
 	FSVONavLink StartLink = FSVONavLink();
 	FSVONavLink CurrentLink = FSVONavLink();
 	FSVONavLink TargetLink = FSVONavLink();
-	
+
 	UWorld* World;
+	USVONavComponent* NavComp;
 	ASVONavVolume& SVOVolume;
 	FSVONavPathFindingConfig& Config;
 
@@ -61,6 +67,22 @@ private:
 
 	void ProcessLink(const FSVONavLink& NeighbourLink);
 
+	int FindPathAStar(const FSVONavLink& StartLink,
+                 const FSVONavLink& TargetLink,
+                 const FVector& StartLocation,
+                 const FVector& TargetLocation,
+                 FSVONavPathFindingConfig Config,
+                 FSVONavPathSharedPtr* Path
+    );
+
+	int FindPathTesting(const FSVONavLink& StartLink,
+                 const FSVONavLink& TargetLink,
+                 const FVector& StartLocation,
+                 const FVector& TargetLocation,
+                 FSVONavPathFindingConfig Config,
+                 FSVONavPathSharedPtr* Path
+    );
+	
 	/* Constructs the path by navigating back through our CameFrom map */
 	void BuildPath(TMap<FSVONavLink, FSVONavLink>& InParent, FSVONavLink InCurrentLink, const FVector& InStartLocation,
 	               const FVector& InTargetLocation, FSVONavPathSharedPtr* InPath);

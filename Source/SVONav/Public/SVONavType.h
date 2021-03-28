@@ -272,6 +272,13 @@ struct SVONAV_API FSVONavPath
 typedef TSharedPtr<FSVONavPath, ESPMode::ThreadSafe> FSVONavPathSharedPtr;
 
 UENUM()
+enum class ESVONavAlgorithm: uint8
+{
+	GreedyAStar UMETA(DisplayName="GreedyA*"),
+    Testing UMETA(DisplayName="Testing")
+};
+
+UENUM()
 enum class ESVONavHeuristic: uint8
 {
 	Manhattan UMETA(DisplayName="Manhattan"),
@@ -319,6 +326,9 @@ struct SVONAV_API FSVONavPathFindingConfig
 	UPROPERTY(BlueprintReadWrite)
 	float NodeSizePreference;
 
+	UPROPERTY(BlueprintReadWrite)
+	ESVONavAlgorithm Algorithm;
+	
 	UPROPERTY(BlueprintReadWrite)
 	ESVONavHeuristic Heuristic;
 

@@ -21,10 +21,13 @@ class SVONAV_API USVONavComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
-
+	// The Algorithm use for pathfinding
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Pathfinding")
+	ESVONavAlgorithm Algorithm = ESVONavAlgorithm::GreedyAStar;
+	
 	// The heuristic to use for scoring during pathfinding
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Pathfinding")
-	ESVONavHeuristic Heuristic = ESVONavHeuristic::Manhattan;
+	ESVONavHeuristic Heuristic = ESVONavHeuristic::Euclidean;
 
 	// Making this value greater than 1 will make the algorithm "greedy"
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Pathfinding")
@@ -32,7 +35,7 @@ public:
 
 	// Making this value greater than 1 will make the algorithm prefer larger-sized nodes
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Pathfinding")
-	float NodeSizePreference = 1.0f;
+	float NodeSizePreference = 2.0f;
 
 	// The heuristic to use for scoring during pathfinding
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Pathfinding")
@@ -48,7 +51,7 @@ public:
 
 	// Custom unit cost
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Pathfinding")
-	float UnitCost = 1.0f;
+	float UnitCost = 5.0f;
 
 #if WITH_EDITOR
 	// Whether to debug draw the pathfinding paths

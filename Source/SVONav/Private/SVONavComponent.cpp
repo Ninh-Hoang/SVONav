@@ -163,6 +163,7 @@ FSVONavLink StartLink;
 	}
 
 	FSVONavPathFindingConfig Config;
+	Config.Algorithm = Algorithm;
 	Config.Heuristic = Heuristic;
 	Config.EstimateWeight = HeuristicWeight;
 	Config.NodeSizePreference = NodeSizePreference;
@@ -175,6 +176,7 @@ FSVONavLink StartLink;
 	(new FAutoDeleteAsyncTask<FSVONavFindPathTask>(
 		*Volume,
 		GetWorld(),
+		this,
 		StartLink,
 		TargetLink,
 		LegalStart,
@@ -318,6 +320,7 @@ bool USVONavComponent::FindPathImmediate(const FVector& StartLocation, const FVe
 	Path->Empty();
 	
 	FSVONavPathFindingConfig Config;
+	Config.Algorithm = Algorithm;
 	Config.Heuristic = Heuristic;
 	Config.EstimateWeight = HeuristicWeight;
 	Config.NodeSizePreference = NodeSizePreference;
@@ -326,7 +329,7 @@ bool USVONavComponent::FindPathImmediate(const FVector& StartLocation, const FVe
 	Config.UseUnitCost = bUseUnitCost;
 	Config.UnitCost = UnitCost;
 
-	SVONavPathFinder PathFinder(GetWorld(), *Volume, Config);
+	SVONavPathFinder PathFinder(GetWorld(), this, *Volume, Config);
 
 	int PathResult = PathFinder.FindPath(StartLink, TargetLink, LegalStart, LegalTarget, Config, NavPath);
 	

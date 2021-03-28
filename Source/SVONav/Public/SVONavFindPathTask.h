@@ -11,8 +11,9 @@ class FSVONavFindPathTask : public FNonAbandonableTask
 
 public:
 	FSVONavFindPathTask(
-	ASVONavVolume& InVolume,
+		ASVONavVolume& InVolume,
 		UWorld* InWorld,
+		USVONavComponent* InNavComp,
 		const FSVONavLink InStartLink,
 		const FSVONavLink InTargetLink,
 		const FVector& InStartLocation,
@@ -24,6 +25,7 @@ public:
 		const bool InDrawDebug)
 		: Volume(InVolume),
 		  World(InWorld),
+		  NavComp(InNavComp),
 		  StartLink(InStartLink),
 		  TargetLink(InTargetLink),
 		  StartLocation(InStartLocation),
@@ -39,6 +41,7 @@ public:
 protected:
 	ASVONavVolume& Volume;
 	UWorld* World;
+	USVONavComponent* NavComp;
 
 	FSVONavLink StartLink;
 	FSVONavLink TargetLink;

@@ -2,7 +2,9 @@
 
 #include <Runtime/AIModule/Classes/AITypes.h>
 
+typedef uint8 layerindex_t;
 typedef uint_fast64_t mortoncode_t;
+typedef int32 nodeindex_t;
 
 UENUM(BlueprintType)
 namespace ESVONavPathfindingRequestResult

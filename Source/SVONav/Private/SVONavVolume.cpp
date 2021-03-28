@@ -78,6 +78,7 @@ bool ASVONavVolume::BuildOctree()
 {
 	//init setup
 	Initialise();
+	
 
 #if WITH_EDITOR
 	const auto StartTime = high_resolution_clock::now();
@@ -88,7 +89,7 @@ bool ASVONavVolume::BuildOctree()
 	Octree.Leaves.AddDefaulted(BlockedIndices[0].Num() * 8 * 0.25f);
 	for (int32 I = 0; I < NumLayers; I++) RasterizeLayer(I);
 	for (int32 I = NumLayers - 2; I >= 0; I--) BuildLinks(I);
-
+	
 	// Clean up and cache the octree
 	NumBytes = Octree.GetSize();
 	CollisionQueryParams.ClearIgnoredActors();
@@ -236,8 +237,9 @@ void ASVONavVolume::RasterizeLayer(uint8 LayerIndex)
 		const int32 NumNodes = GetLayerNodeCount(LayerIndex);
 		for (int32 I = 0; I < NumNodes; I++)
 		{
-			if (BlockedIndices[LayerIndex].Contains(I >> 3))
+			if (IsAnyMemberBlocked(LayerIndex, I))
 			{
+				// Add a node
 				const int32 Index = GetLayer(LayerIndex).Emplace();
 				FSVONavNode& NewNode = GetLayer(LayerIndex)[Index];
 				NewNode.MortonCode = I;
@@ -263,6 +265,39 @@ void ASVONavVolume::RasterizeLayer(uint8 LayerIndex)
 	}
 }
 
+bool ASVONavVolume::IsAnyMemberBlocked(layerindex_t LayerIndex, mortoncode_t aCode) const
+{
+	const mortoncode_t parentCode = aCode >> 3;
+
+	if (LayerIndex == BlockedIndices.Num())
+	{
+		return true;
+	}
+	// The parent of this code is blocked
+	if (BlockedIndices[LayerIndex].Contains(parentCode))
+	{
+		return true;
+	}
+
+	return false;
+}
+
+bool ASVONavVolume::GetIndexForCode(layerindex_t LayerIndex, mortoncode_t aCode, nodeindex_t& oIndex) const
+{
+	const TArray<FSVONavNode>& layer = GetLayer(LayerIndex);
+
+	for (int i = 0; i < layer.Num(); i++)
+	{
+		if (layer[i].MortonCode == aCode)
+		{
+			oIndex = i;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void ASVONavVolume::RasterizeLeaf(FVector NodeLocation, int32 LeafIndex)
 {
 	const FVector Location = NodeLocation - VoxelHalfSizes[0];
@@ -274,32 +309,50 @@ void ASVONavVolume::RasterizeLeaf(FVector NodeLocation, int32 LeafIndex)
 		if (LeafIndex >= Octree.Leaves.Num() - 1) Octree.Leaves.AddDefaulted(1);
 
 		if (IsBlocked(VoxelLocation, VoxelScale * 0.5f)) Octree.Leaves[LeafIndex].SetSubNode(I);
+
 	}
 }
 
 void ASVONavVolume::BuildLinks(uint8 LayerIndex)
 {
-	if (Octree.Layers.Num() == 0) return;
-	TArray<FSVONavNode>& Layer = GetLayer(LayerIndex);
-	for (int32 I = 0; I < Layer.Num(); I++) {
-		FSVONavNode& Node = Layer[I];
-		FVector NodeLocation;
-		GetNodeLocation(LayerIndex, Node.MortonCode, NodeLocation);
+	TArray<FSVONavNode>& layer = GetLayer(LayerIndex);
+	layerindex_t searchLayer = LayerIndex;
 
-		for (int32 Direction = 0; Direction < 6; Direction++) {
-			int32 NodeIndex = I;
-			FSVONavLink& Link = Node.Neighbours[Direction];
-			uint8 CurrentLayer = LayerIndex;
-			while (!FindLink(CurrentLayer, NodeIndex, Direction, Link, NodeLocation) && CurrentLayer < Octree.Layers.Num() - 2) {
-				FSVONavLink& ParentLink = GetLayer(CurrentLayer)[NodeIndex].Parent;
-				if (ParentLink.IsValid()) {
-					NodeIndex = ParentLink.NodeIndex;
-					CurrentLayer = ParentLink.LayerIndex;
-				} else {
-					CurrentLayer++;
-					GetNodeIndex(CurrentLayer, Node.MortonCode >> 3, NodeIndex);
+	// For each node
+	for (nodeindex_t i = 0; i < layer.Num(); i++)
+	{
+		FSVONavNode& node = layer[i];
+		// Get our world co-ordinate
+		uint_fast32_t x, y, z;
+		morton3D_64_decode(node.MortonCode, x, y, z);
+		nodeindex_t backtrackIndex = -1;
+		nodeindex_t index = i;
+		FVector nodePos;
+		GetNodeLocation(LayerIndex, node.MortonCode, nodePos);
+
+		// For each direction
+		for (int d = 0; d < 6; d++)
+		{
+			FSVONavLink& linkToUpdate = node.Neighbours[d];
+
+			backtrackIndex = index;
+
+			while (!FindLink(searchLayer, index, d, linkToUpdate, nodePos) && LayerIndex < Octree.Layers.Num() - 2)
+			{
+				FSVONavLink& parent = GetLayer(searchLayer)[index].Parent;
+				if (parent.IsValid())
+				{
+					index = parent.NodeIndex;
+					searchLayer = parent.LayerIndex;
+				}
+				else
+				{
+					searchLayer++;
+					GetIndexForCode(searchLayer, node.MortonCode >> 3, index);
 				}
 			}
+			index = backtrackIndex;
+			searchLayer = LayerIndex;
 		}
 	}
 }
@@ -307,66 +360,79 @@ void ASVONavVolume::BuildLinks(uint8 LayerIndex)
 bool ASVONavVolume::FindLink(uint8 LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link,
                              const FVector& NodeLocation)
 {
-	const int32 MaxCoordinate = GetSegmentNodeCount(LayerIndex);
-	
-	TArray<FSVONavNode>& Layer = GetLayer(LayerIndex);
-	FSVONavNode& TargetNode = GetLayer(LayerIndex)[NodeIndex];
-	
-	uint_fast32_t X, Y, Z;
-	morton3D_64_decode(TargetNode.MortonCode, X, Y, Z);
-	
-	// Create a signed vector from the X Y and Z values
-	FIntVector S( static_cast<int32>(X), static_cast<int32>(Y), static_cast<int32>(Z) );
-	S += Directions[Direction];
-	if (S.X < 0 || S.X >= MaxCoordinate ||
-        S.Y < 0 || S.Y >= MaxCoordinate ||
-        S.Z < 0 || S.Z >= MaxCoordinate) {
-		Link.Invalidate();
-		return true;
-        }
-	X = S.X;
-	Y = S.Y;
-	Z = S.Z;
-	
-	const uint_fast64_t AdjacentCode = morton3D_64_encode(X, Y, Z);
-	int32 Stop = Layer.Num();
-	int32 NodeDelta = 1;
-	if (AdjacentCode < TargetNode.MortonCode)
-	{
-		NodeDelta = -1;
-		Stop = -1;
-	}
+	int32 maxCoord = GetSegmentNodeCount(LayerIndex);
+	FSVONavNode& node = GetLayer(LayerIndex)[NodeIndex];
+	TArray<FSVONavNode>& layer = GetLayer(LayerIndex);
 
-	for (int32 I = NodeIndex + NodeDelta; I != Stop; I += NodeDelta)
+	// Get our world co-ordinate
+	uint_fast32_t x = 0, y = 0, z = 0;
+	morton3D_64_decode(node.MortonCode, x, y, z);
+	int32 sX = x, sY = y, sZ = z;
+	// Add the direction
+	sX += Directions[Direction].X;
+	sY += Directions[Direction].Y;
+	sZ += Directions[Direction].Z;
+
+	// If the coords are out of bounds, the link is invalid.
+	if (sX < 0 || sX >= maxCoord || sY < 0 || sY >= maxCoord || sZ < 0 || sZ >= maxCoord)
 	{
-		FSVONavNode& Node = Layer[I];
-		if (Node.MortonCode == AdjacentCode)
+		Link.Invalidate();
+
+		return true;
+	}
+	x = sX;
+	y = sY;
+	z = sZ;
+	// Get the morton code for the direction
+	mortoncode_t thisCode = morton3D_64_encode(x, y, z);
+	bool isHigher = thisCode > node.MortonCode;
+	int32 nodeDelta = (isHigher ? 1 : -1);
+
+	while ((NodeIndex + nodeDelta) < layer.Num() && NodeIndex + nodeDelta >= 0)
+	{
+		// This is the node we're looking for
+		if (layer[NodeIndex + nodeDelta].MortonCode == thisCode)
 		{
-			if (LayerIndex == 0 && 
-                Node.HasChildren() && 
-                Octree.Leaves[Node.FirstChild.NodeIndex].IsOccluded()) {
-				
-				Link.Invalidate();
-				return true;
-                }
-			Link.SetLayerIndex(LayerIndex);
-			if (I >= Layer.Num() || I < 0) break; 
-			Link.SetNodeIndex(I);
-			FVector AdjacentLocation;
-			GetNodeLocation(LayerIndex, AdjacentCode, AdjacentLocation);
-			
+			const FSVONavNode& thisNode = layer[NodeIndex + nodeDelta];
+			// This is a leaf node
+			if (LayerIndex == 0 && thisNode.HasChildren())
+			{
+				// Set invalid link if the leaf node is completely blocked, no point linking to it
+				if (GetLeafNode(thisNode.FirstChild.GetNodeIndex()).IsOccluded())
+				{
+					Link.Invalidate();
+					return true;
+				}
+			}
+			// Otherwise, use this link
+			Link.LayerIndex = LayerIndex;
+			check(NodeIndex + nodeDelta < layer.Num());
+			Link.NodeIndex = NodeIndex + nodeDelta;
+
 #if WITH_EDITOR
+			FVector AdjacentLocation;
+			GetNodeLocation(LayerIndex, thisCode, AdjacentLocation);
 			DebugLinks.Add(FSVONavDebugLink(NodeLocation, AdjacentLocation, LayerIndex));
 #endif
-			
+
 			return true;
 		}
-		if (NodeDelta == -1 && Node.MortonCode < AdjacentCode || NodeDelta == 1 && Node.MortonCode > AdjacentCode)
+		// If we've passed the code we're looking for, it's not on this layer
+		else if ((isHigher && layer[NodeIndex + nodeDelta].MortonCode > thisCode) || (!isHigher && layer[NodeIndex + nodeDelta].MortonCode < thisCode))
 		{
 			return false;
 		}
+
+		nodeDelta += (isHigher ? 1 : -1);
 	}
+
+	// I'm not entirely sure if it's valid to reach the end? Hmmm...
 	return false;
+}
+
+const FSVONavLeafNode& ASVONavVolume::GetLeafNode(nodeindex_t aIndex) const
+{
+	return Octree.Leaves[aIndex];
 }
 
 float ASVONavVolume::GetVoxelScale(uint8 LayerIndex) const
@@ -482,7 +548,7 @@ bool ASVONavVolume::GetLinkLocation(const FSVONavLink& Link, FVector& Location) 
 	{
 		uint_fast32_t X, Y, Z;
 		morton3D_64_decode(Link.GetSubNodeIndex(), X, Y, Z);
-		const float Scale = VoxelHalfSizes[0];
+		const float Scale = VoxelHalfSizes[0]*2;
 		Location += FVector(X * Scale * 0.25f, Y * Scale * 0.25f, Z * Scale * 0.25f) - FVector(Scale * 0.375);
 		const FSVONavLeafNode& Leaf = Octree.Leaves[Node.FirstChild.NodeIndex];
 		return !Leaf.GetSubNode(Link.GetSubNodeIndex());
@@ -517,55 +583,75 @@ bool ASVONavVolume::GetNodeLocation(const FSVONavLink& Link, FVector& Location)
 
 void ASVONavVolume::GetNeighbourLeaves(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const
 {
-	const uint_fast64_t LeafIndex = Link.SubNodeIndex;
-	if (LinkNodeIsValid(Link))
+	const mortoncode_t leafIndex = Link.SubNodeIndex;
+	const FSVONavNode& node = GetNode(Link);
+	const FSVONavLeafNode& leaf = Octree.Leaves[node.FirstChild.NodeIndex];
+
+	// Get our starting co-ordinates
+	uint_fast32_t x = 0, y = 0, z = 0;
+	morton3D_64_decode(leafIndex, x, y, z);
+
+	for (int i = 0; i < 6; i++)
 	{
-		const FSVONavNode& Node = GetNode(Link);
-		if (static_cast<int32>(Node.FirstChild.NodeIndex) >= Octree.Leaves.Num()) return;
-		const FSVONavLeafNode& FirstLeaf = Octree.Leaves[Node.FirstChild.NodeIndex];
-
-		uint_fast32_t X = 0, Y = 0, Z = 0;
-		morton3D_64_decode(LeafIndex, X, Y, Z);
-		for (int32 I = 0; I < 6; I++)
+		// Need to switch to signed ints
+		int32 sX = x + Directions[i].X;
+		int32 sY = y + Directions[i].Y;
+		int32 sZ = z + Directions[i].Z;
+		// If the neighbour is in bounds of this leaf node
+		if (sX >= 0 && sX < 4 && sY >= 0 && sY < 4 && sZ >= 0 && sZ < 4)
 		{
-			int32 SignedX = X + Directions[I].X;
-			int32 SignedY = Y + Directions[I].Y;
-			int32 SignedZ = Z + Directions[I].Z;
-			if (SignedX >= 0 && SignedX < 4
-				&& SignedY >= 0 && SignedY < 4
-				&& SignedZ >= 0 && SignedZ < 4)
+			mortoncode_t thisIndex = morton3D_64_encode(sX, sY, sZ);
+			// If this node is blocked, then no link in this direction, continue
+			if (leaf.GetSubNode(thisIndex))
 			{
-				uint_fast64_t Index = morton3D_64_encode(SignedX, SignedY, SignedZ);
-
-				if (FirstLeaf.GetSubNode(Index)) continue;
-				NeighbourLinks.Emplace(0, Link.NodeIndex, Index);
 				continue;
 			}
-			const FSVONavLink& NeighbourLink = Node.Neighbours[I];
-
-			if (LinkNodeIsValid(NeighbourLink))
+			else // Otherwise, this is a valid link, add it
 			{
-				const FSVONavNode& AdjacentNode = GetNode(NeighbourLink);
-				if (!AdjacentNode.FirstChild.IsValid())
-				{
-					NeighbourLinks.Add(NeighbourLink);
-					continue;
-				}
+				NeighbourLinks.Emplace(0, Link.GetNodeIndex(), thisIndex);
+				continue;
+			}
+		}
+		else // the neighbours is out of bounds, we need to find our neighbour
+		{
+			const FSVONavLink& neighbourLink = node.Neighbours[i];
+			const FSVONavNode& neighbourNode = GetNode(neighbourLink);
 
-				const FSVONavLeafNode& Leaf = Octree.Leaves[AdjacentNode.FirstChild.NodeIndex];
+			// If the neighbour layer 0 has no leaf nodes, just return it
+			if (!neighbourNode.FirstChild.IsValid())
+			{
+				NeighbourLinks.Add(neighbourLink);
+				continue;
+			}
 
-				if (!Leaf.IsOccluded())
+			const FSVONavLeafNode& leafNode = Octree.Leaves[neighbourNode.FirstChild.NodeIndex];
+
+			if (leafNode.IsOccluded())
+			{
+				// The leaf node is completely blocked, we don't return it
+				continue;
+			}
+			else // Otherwise, we need to find the correct sub node
+			{
+				if (sX < 0)
+					sX = 3;
+				else if (sX > 3)
+					sX = 0;
+				else if (sY < 0)
+					sY = 3;
+				else if (sY > 3)
+					sY = 0;
+				else if (sZ < 0)
+					sZ = 3;
+				else if (sZ > 3)
+					sZ = 0;
+				//
+				mortoncode_t subNodeCode = morton3D_64_encode(sX, sY, sZ);
+
+				// Only return the neighbour if it isn't blocked!
+				if (!leafNode.GetSubNode(subNodeCode))
 				{
-					if (SignedX < 0) SignedX = 3;
-					else if (SignedX > 3) SignedX = 0;
-					else if (SignedY < 0) SignedY = 3;
-					else if (SignedY > 3) SignedY = 0;
-					else if (SignedZ < 0) SignedZ = 3;
-					else if (SignedZ > 3) SignedZ = 0;
-					const uint_fast64_t SubCode = morton3D_64_encode(SignedX, SignedY, SignedZ);
-					if (!Leaf.GetSubNode(SubCode))
-						NeighbourLinks.
-							Emplace(0, AdjacentNode.FirstChild.NodeIndex, SubCode);
+					NeighbourLinks.Emplace(0, neighbourNode.FirstChild.GetNodeIndex(), subNodeCode);
 				}
 			}
 		}

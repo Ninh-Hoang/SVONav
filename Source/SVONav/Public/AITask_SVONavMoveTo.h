@@ -38,7 +38,7 @@ public:
 			"AcceptanceRadius,StopOnOverlap,AcceptPartialPath,bUsePathfinding,bUseContinuosGoalTracking", DefaultToSelf
 			= "Controller", BlueprintInternalUseOnly = "TRUE", DisplayName = "SVONav Move To Location or Actor"))
 	static UAITask_SVONavMoveTo* SVONavAIMoveTo(AAIController* Controller, FVector GoalLocation,
-	                                            bool InUseAsyncPathfinding, AActor* GoalActor = nullptr,
+	                                            bool InUseAsyncPathfinding = true, AActor* GoalActor = nullptr,
 	                                            float AcceptanceRadius = -1.f,
 	                                            EAIOptionFlag::Type StopOnOverlap = EAIOptionFlag::Default,
 	                                            bool InCheckLineOfSight = true, bool InLockAILogic = true,
