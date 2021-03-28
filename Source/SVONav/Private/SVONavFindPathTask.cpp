@@ -21,5 +21,6 @@ void FSVONavFindPathTask::DoWork()
 	}
 #endif
 	CompleteFlag = true;
+	TaskComplete.Execute(Path.Points.Num() > 0);
 	//});
 }

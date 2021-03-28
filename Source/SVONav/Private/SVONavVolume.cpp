@@ -14,6 +14,8 @@
 #include "Kismet/KismetMathLibrary.h"
 
 #include "chrono"
+#include "SVONavUpdateOctreeTask.h"
+#include "Async/Async.h"
 using namespace std::chrono;
 
 ASVONavVolume::ASVONavVolume(const FObjectInitializer& ObjectInitializer)
@@ -32,6 +34,15 @@ ASVONavVolume::ASVONavVolume(const FObjectInitializer& ObjectInitializer)
 
 void ASVONavVolume::UpdateTaskComplete()
 {
+	UnlockOctree();
+
+#if WITH_EDITOR
+	// Run the debug draw on the game thread
+	AsyncTask(ENamedThreads::GameThread, [=]()
+	{
+		DebugDrawOctree();
+	});
+#endif
 }
 
 void ASVONavVolume::OnConstruction(const FTransform& Transform)
@@ -42,13 +53,35 @@ void ASVONavVolume::OnConstruction(const FTransform& Transform)
 void ASVONavVolume::BeginPlay()
 {
 	CachedOctree = Octree;
-	OnUpdateComplete.BindUFunction(this, FName("UpdateTaskComplete"));
+	OnUpdateComplete.BindUObject(this, &ASVONavVolume::UpdateTaskComplete);
 	SetActorTickInterval(TickInterval);
 }
 
 void ASVONavVolume::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (!bOctreeLocked)
+	{
+		if (bUpdateRequested) {
+
+			// Prevent any further requests until update task is complete
+			LockOctree();
+
+			// Execute UpdateOctree as background task
+			(new FAutoDeleteAsyncTask<FSVONavUpdateOctreeTask>(this, OnUpdateComplete))->StartBackgroundTask();
+		
+			// Update complete
+			bUpdateRequested = false;
+
+#if WITH_EDITOR		
+		} else if (bDebugDrawRequested) {
+			DebugDrawOctree();
+			bDebugDrawRequested = false;
+#endif
+
+		}
+	}
 }
 
 void ASVONavVolume::PostRegisterAllComponents()
@@ -78,7 +111,7 @@ bool ASVONavVolume::BuildOctree()
 {
 	//init setup
 	Initialise();
-	
+
 
 #if WITH_EDITOR
 	const auto StartTime = high_resolution_clock::now();
@@ -89,7 +122,7 @@ bool ASVONavVolume::BuildOctree()
 	Octree.Leaves.AddDefaulted(BlockedIndices[0].Num() * 8 * 0.25f);
 	for (int32 I = 0; I < NumLayers; I++) RasterizeLayer(I);
 	for (int32 I = NumLayers - 2; I >= 0; I--) BuildLinks(I);
-	
+
 	// Clean up and cache the octree
 	NumBytes = Octree.GetSize();
 	CollisionQueryParams.ClearIgnoredActors();
@@ -121,6 +154,11 @@ bool ASVONavVolume::BuildOctree()
 
 void ASVONavVolume::UpdateOctree()
 {
+#if WITH_EDITOR
+	const auto UpdateStartTime = high_resolution_clock::now();
+#endif
+
+	Octree = CachedOctree;
 }
 
 void ASVONavVolume::Serialize(FArchive& Ar)
@@ -179,17 +217,21 @@ void ASVONavVolume::UpdateVolume()
 void ASVONavVolume::InitRasterize()
 {
 	BlockedIndices.Emplace();
-	for (int32 I = 0; I < GetLayerNodeCount(1); I++) {
+	for (int32 I = 0; I < GetLayerNodeCount(1); I++)
+	{
 		FVector Location;
 		GetNodeLocation(1, I, Location);
-		if (IsBlocked(Location, VoxelHalfSizes[1])) {
+		if (IsBlocked(Location, VoxelHalfSizes[1]))
+		{
 			BlockedIndices[0].Add(I);
 		}
 	}
 
-	for (int32 I = 0; I < VoxelExponent; I++) {
+	for (int32 I = 0; I < VoxelExponent; I++)
+	{
 		BlockedIndices.Emplace();
-		for (uint_fast64_t& MortonCode : BlockedIndices[I]) {
+		for (uint_fast64_t& MortonCode : BlockedIndices[I])
+		{
 			BlockedIndices[I + 1].Add(MortonCode >> 3);
 		}
 	}
@@ -302,14 +344,15 @@ void ASVONavVolume::RasterizeLeaf(FVector NodeLocation, int32 LeafIndex)
 {
 	const FVector Location = NodeLocation - VoxelHalfSizes[0];
 	const float VoxelScale = VoxelHalfSizes[0] * 0.5f;
-	for (int32 I = 0; I < 64; I++) {
+	for (int32 I = 0; I < 64; I++)
+	{
 		uint_fast32_t X, Y, Z;
 		morton3D_64_decode(I, X, Y, Z);
-		const FVector VoxelLocation = Location + FVector(X * VoxelScale, Y * VoxelScale, Z * VoxelScale) + VoxelScale * 0.5f;
+		const FVector VoxelLocation = Location + FVector(X * VoxelScale, Y * VoxelScale, Z * VoxelScale) + VoxelScale *
+			0.5f;
 		if (LeafIndex >= Octree.Leaves.Num() - 1) Octree.Leaves.AddDefaulted(1);
 
 		if (IsBlocked(VoxelLocation, VoxelScale * 0.5f)) Octree.Leaves[LeafIndex].SetSubNode(I);
-
 	}
 }
 
@@ -417,8 +460,9 @@ bool ASVONavVolume::FindLink(uint8 LayerIndex, int32 NodeIndex, uint8 Direction,
 
 			return true;
 		}
-		// If we've passed the code we're looking for, it's not on this layer
-		else if ((isHigher && layer[NodeIndex + nodeDelta].MortonCode > thisCode) || (!isHigher && layer[NodeIndex + nodeDelta].MortonCode < thisCode))
+			// If we've passed the code we're looking for, it's not on this layer
+		else if ((isHigher && layer[NodeIndex + nodeDelta].MortonCode > thisCode) || (!isHigher && layer[NodeIndex +
+			nodeDelta].MortonCode < thisCode))
 		{
 			return false;
 		}
@@ -517,13 +561,16 @@ bool ASVONavVolume::GetLink(const FVector& Location, FSVONavLink& Link)
 
 bool ASVONavVolume::FindAccessibleLink(FVector& Location, FSVONavLink& Link)
 {
-	for (int32 I = 1; I < 4; I++) {
-		for (int32 J = 0; J < 6; J++) {
+	for (int32 I = 1; I < 4; I++)
+	{
+		for (int32 J = 0; J < 6; J++)
+		{
 			FVector OffsetLocation = Location + FVector(Directions[J] * Clearance * I);
-			if (GetLink(OffsetLocation,  Link)) {
+			if (GetLink(OffsetLocation, Link))
+			{
 				Location = OffsetLocation;
 				return true;
-			}	
+			}
 		}
 	}
 	return false;
@@ -548,7 +595,7 @@ bool ASVONavVolume::GetLinkLocation(const FSVONavLink& Link, FVector& Location) 
 	{
 		uint_fast32_t X, Y, Z;
 		morton3D_64_decode(Link.GetSubNodeIndex(), X, Y, Z);
-		const float Scale = VoxelHalfSizes[0]*2;
+		const float Scale = VoxelHalfSizes[0] * 2;
 		Location += FVector(X * Scale * 0.25f, Y * Scale * 0.25f, Z * Scale * 0.25f) - FVector(Scale * 0.375);
 		const FSVONavLeafNode& Leaf = Octree.Leaves[Node.FirstChild.NodeIndex];
 		return !Leaf.GetSubNode(Link.GetSubNodeIndex());
@@ -816,24 +863,29 @@ void ASVONavVolume::PostEditChangeProperty(FPropertyChangedEvent& PropertyChange
 
 	const TSet<FString> CriticalProperties = {
 		"VolumeSize",
-        "VoxelSize"};
+		"VoxelSize"
+	};
 	const TSet<FString> DebugProperties = {
 		"bDisplayVolumeBounds",
-        "VolumeBoundsColor",
-        "bDisplayLayers",
-        "bDisplayLeaves",
-        "bDisplayLeafOcclusion",
-        "bDisplayNeighbourLink",
-        "LineScale",
-        "LayerColours",
-        "LeafOcclusionColour",
-        "bDisplayMortonCodes",
-        "MortonCodeColour",
-        "MortonCodeScale"};
-	if (CriticalProperties.Contains(PropertyName)) {
+		"VolumeBoundsColor",
+		"bDisplayLayers",
+		"bDisplayLeaves",
+		"bDisplayLeafOcclusion",
+		"bDisplayNeighbourLink",
+		"LineScale",
+		"LayerColours",
+		"LeafOcclusionColour",
+		"bDisplayMortonCodes",
+		"MortonCodeColour",
+		"MortonCodeScale"
+	};
+	if (CriticalProperties.Contains(PropertyName))
+	{
 		Initialise();
 		DebugDrawOctree();
-	} else if (DebugProperties.Contains(PropertyName)) {
+	}
+	else if (DebugProperties.Contains(PropertyName))
+	{
 		DebugDrawOctree();
 	}
 }
@@ -884,8 +936,8 @@ void ASVONavVolume::DebugDrawOctree()
 				if (bDisplayMortonCodes)
 				{
 					DebugDrawMortonCode(NodeLocation,
-                                        FString::FromInt(I) + ":" + FString::FromInt(Octree.Layers[I][J].MortonCode),
-                                        MortonCodeColour);
+					                    FString::FromInt(I) + ":" + FString::FromInt(Octree.Layers[I][J].MortonCode),
+					                    MortonCodeColour);
 				}
 			}
 		}

@@ -40,7 +40,7 @@ public:
 
 	// How often to tick this actor to perform dynamic updates
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Volume")
-	float TickInterval = 0.1f;
+	float TickInterval = 0.2f;
 
 	// Draw distance for debug lines
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging")
@@ -134,7 +134,11 @@ public:
 	void Initialise();
 	bool BuildOctree();
 	void UpdateOctree();
-
+	
+	//update octree
+	void LockOctree() { bOctreeLocked = true; }
+	void UnlockOctree() { bOctreeLocked = false; }
+	
 	//getter setter checker
 	bool OctreeValid() const { return NumLayers > 0; }
 	void GetVolumeExtents(const FVector& Location, int32 LayerIndex, FIntVector& Extents) const;
@@ -172,6 +176,8 @@ private:
 	FCollisionQueryParams CollisionQueryParams;
 
 	FSVONavUpdateOctreeDelegate OnUpdateComplete;
+	bool bOctreeLocked = false;
+	bool bUpdateRequested;
 
 #if WITH_EDITOR
 	bool bDebugDrawRequested;
@@ -204,7 +210,6 @@ private:
 		{18, 19, 26, 27, 22, 23, 30, 31, 50, 51, 58, 59, 54, 55, 62, 63},
 		{0, 1, 8, 9, 2, 3, 10, 11, 16, 17, 24, 25, 18, 19, 26, 27},
 		{36, 37, 44, 45, 38, 39, 46, 47, 52, 53, 60, 61, 54, 55, 62, 63}
-
 	};
 
 	void UpdateVolume();
