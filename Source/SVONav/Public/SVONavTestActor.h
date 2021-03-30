@@ -51,6 +51,5 @@ public:
 	bool InitStartAndGoalActor();
 
 	void FindPath();
-
 };
 

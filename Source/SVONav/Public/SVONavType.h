@@ -104,6 +104,11 @@ struct SVONAV_API FSVONavNode
 	}
 
 	bool HasChildren() const { return FirstChild.IsValid(); }
+
+	bool operator==(const FSVONavNode& Node) const
+	{
+		return MortonCode == Node.MortonCode;
+	}
 };
 
 FORCEINLINE FArchive& operator <<(FArchive& Ar, FSVONavNode& Node)

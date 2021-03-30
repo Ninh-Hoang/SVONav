@@ -2,6 +2,8 @@
 
 
 #include "SVONavTestActor.h"
+
+#include "SVONavVolume.h"
 #include "Components/LineBatchComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/HUD.h"

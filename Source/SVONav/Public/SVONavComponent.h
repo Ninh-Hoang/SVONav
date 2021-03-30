@@ -82,6 +82,9 @@ public:
 	                       const bool bCheckLineOfSight, FSVONavPathSharedPtr* NavPath,
 	                       ESVONavPathFindingCallResult& Result);
 
+	UFUNCTION(BlueprintCallable, Category = "SVONav|Pathfinding")
+	bool DoesPathExist(const FVector& StartLocation, const FVector& TargetLocation);
+
 	FSVONavPathSharedPtr& GetPath() { return SVONavPath; }
 	virtual FVector GetPawnPosition() const;
 

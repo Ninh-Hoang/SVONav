@@ -4,7 +4,7 @@
 #include "Async/Async.h"
 #include "Async/AsyncWork.h"
 
-class FSVONavUpdateOctreeTask
+class FSVONavUpdateOctreeTask : public FNonAbandonableTask
 {
 friend class FAutoDeleteAsyncTask<FSVONavUpdateOctreeTask>;
 

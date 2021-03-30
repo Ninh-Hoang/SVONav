@@ -344,6 +344,107 @@ bool USVONavComponent::FindPathImmediate(const FVector& StartLocation, const FVe
 	return true;
 }
 
+bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector& TargetLocation)
+{
+	FSVONavLink StartLink;
+	FSVONavLink TargetLink;
+	FVector LegalStart = StartLocation;
+	FVector LegalTarget = TargetLocation;
+	
+	// Error checking before task start
+	if (!VolumeContainsOctree() || !VolumeContainsOwner()) FindVolume();
+	if (!VolumeContainsOwner())
+	{
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Error,
+                                         TEXT(
+                                             "%s: Find path cannot initialise. Nav3D component owner is not inside a Nav3D volume"
+                                         ), *GetOwner()->GetName());
+#endif
+
+		return false;
+	}
+	// Check that an octree has been found
+	if (!VolumeContainsOctree())
+	{
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Error,
+                                         TEXT("%s: Find path cannot initialise. Nav3D octree has not been built"),
+                                         *GetOwner()->GetName());
+#endif
+
+		return false;
+	}
+
+	if (!Volume->GetLink(StartLocation, StartLink))
+	{
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Warning, TEXT("%s: Failed to find start Link. Searching nearby..."),
+                                         *GetOwner()->GetName());
+#endif
+
+		if (!Volume->FindAccessibleLink(LegalStart, StartLink))
+		{
+#if WITH_EDITOR
+			if (bDebugLogPathfinding) UE_LOG(LogTemp, Error, TEXT("%s: No accessible adjacent Link found"),
+                                             *GetOwner()->GetName());
+#endif
+
+			return false;
+		}
+
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Display, TEXT("%s: Found legal start location"),
+                                         *GetOwner()->GetName());
+#endif
+	}
+
+	if (!Volume->GetLink(TargetLocation, TargetLink))
+	{
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Warning, TEXT("%s: Failed to find target Link. Searching nearby..."),
+                                         *GetOwner()->GetName());
+#endif
+
+		if (!Volume->FindAccessibleLink(LegalTarget, TargetLink))
+		{
+#if WITH_EDITOR
+			if (bDebugLogPathfinding) UE_LOG(LogTemp, Error, TEXT("%s: No accessible Links found near target"),
+                                             *GetOwner()->GetName());
+#endif
+
+			return false;
+		}
+	}
+
+	FSVONavNode StartNode;
+	StartNode = Volume->GetNode(StartLink);
+	
+	FSVONavNode TargetNode;
+	TargetNode = Volume->GetNode(TargetLink);
+
+	for(int i = 0; i < Volume->NumLayers; i++)
+	{
+		if(TargetNode == StartNode)
+		{
+			if (bDebugLogPathfinding) UE_LOG(LogTemp, Error, TEXT("%s: Path exist, confirmed after %i Iterations"), *GetOwner()->GetName(), i);
+				return true;
+		}
+
+		if(!StartNode.Parent.IsValid()) break;
+		StartNode = Volume->GetNode(StartNode.Parent);
+
+		if(!TargetNode.Parent.IsValid()) break;
+		TargetNode = Volume->GetNode(TargetNode.Parent);
+	}
+
+	
+	return false;
+}
+
 FVector USVONavComponent::GetPawnPosition() const
 {
 	FVector Result;
