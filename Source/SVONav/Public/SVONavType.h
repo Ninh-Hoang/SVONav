@@ -94,7 +94,8 @@ struct SVONAV_API FSVONavNode
 	mortoncode_t MortonCode;
 	FSVONavLink Parent;
 	FSVONavLink FirstChild;
-	FSVONavLink Neighbours[6];
+	FSVONavLink Neighbours[12];
+	FSVONavLink Childs[8];
 
 	FSVONavNode() :
 		MortonCode(0),
@@ -117,9 +118,13 @@ FORCEINLINE FArchive& operator <<(FArchive& Ar, FSVONavNode& Node)
 	Ar << Node.Parent;
 	Ar << Node.FirstChild;
 
-	for (int32 I = 0; I < 6; I++)
+	for (int32 I = 0; I < 12; I++)
 	{
 		Ar << Node.Neighbours[I];
+	}
+	for (int32 I = 0; I < 8; I++)
+	{
+		Ar << Node.Childs[I];
 	}
 
 	return Ar;

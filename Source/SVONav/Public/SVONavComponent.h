@@ -88,10 +88,10 @@ public:
 	FSVONavPathSharedPtr& GetPath() { return SVONavPath; }
 	virtual FVector GetPawnPosition() const;
 
-protected:
 	UPROPERTY()
 	ASVONavVolume* Volume;
-
+	
+protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
 

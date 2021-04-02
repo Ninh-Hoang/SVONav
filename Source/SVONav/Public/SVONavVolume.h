@@ -143,19 +143,25 @@ public:
 	bool OctreeValid() const { return NumLayers > 0; }
 	void GetVolumeExtents(const FVector& Location, int32 LayerIndex, FIntVector& Extents) const;
 	void GetMortonVoxel(const FVector& Location, int32 LayerIndex, FIntVector& MortonLocation) const;
+	void GetMortonVoxel_Hie(const FVector& Location, int32 LayerIndex, FIntVector& MortonLocation) const;
 	FBox GetBoundingBox() const;
 	bool GetLink(const FVector& Location, FSVONavLink& Link);
 	const FSVONavLeafNode& GetLeafNode(nodeindex_t aIndex) const;
 	bool FindAccessibleLink(FVector& Location, FSVONavLink& Link);
 	float GetVoxelScale(uint8 LayerIndex) const;
+	float GetVoxelScale_Hie(uint8 LayerIndex) const;
 	const TArray<FSVONavNode>& GetLayer(uint8 LayerIndex) const { return Octree.Layers[LayerIndex]; };
+	const TArray<FSVONavNode>& GetLayer_Hie(uint8 LayerIndex) const { return HieOctree.Layers[LayerIndex]; };
 	const FSVONavNode& GetNode(const FSVONavLink& Link) const;
+	const FSVONavNode& GetNode_Hie(const FSVONavLink& Link) const;
 	bool LinkNodeIsValid(const FSVONavLink& Link) const;
 	bool GetLinkLocation(const FSVONavLink& Link, FVector& Location) const;
 	bool GetNodeLocation(uint8 LayerIndex, uint_fast64_t MortonCode, FVector& Location) const;
+	bool GetNodeLocation_Hie(uint8 LayerIndex, uint_fast64_t MortonCode, FVector& Location) const;
 	bool GetNodeLocation(const FSVONavLink& Link, FVector& Location);
 	void GetNeighbourLeaves(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
 	void GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
+	void GetNeighbourLinks_Hie(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
 	bool IsWithinBounds(const FVector Location) const { return GetBoundingBox().IsInside(Location); }
 
 	//debug draw
@@ -163,13 +169,20 @@ public:
 	void AddDebugNavPath(const FSVONavDebugPath DebugPath);
 	void RequestOctreeDebugDraw();
 	void DebugDrawOctree();
+	void DebugDrawOctree_Hie();
 	FColor GetLayerColour(const int32 LayerIndex) const;
+	FColor GetLayerColour_Hie(const int32 LayerIndex) const;
 
 private:
 	FSVONavOctree Octree;
 	FSVONavOctree CachedOctree;
 	TArray<float> VoxelHalfSizes;
 	TArray<TSet<uint_fast64_t>> BlockedIndices;
+	
+	FSVONavOctree HieOctree;
+	TArray<float> VoxelHalfSizes_Hie;
+	int32 VoxelExponent_Hie;
+	int32 NumLayer_Hie;
 
 	FVector VolumeOrigin;
 	FVector VolumeExtent;
@@ -195,6 +208,16 @@ private:
 		FIntVector(0, 0, -1)
 	};
 
+	const FIntVector FirstChildOffsetDir[7] = {
+		FIntVector(1, 0, 0),
+        FIntVector(1, 1, 0),
+        FIntVector(0, 1, 0),
+        FIntVector(0, 1, 1),
+        FIntVector(1, 1, 1),
+        FIntVector(1, 0, 1),
+		FIntVector(0, 0, 1)
+	};
+
 	const int32 NodeOffsets[6][4] = {
 		{0, 4, 2, 6},
 		{1, 3, 5, 7},
@@ -203,6 +226,7 @@ private:
 		{0, 1, 2, 3},
 		{4, 5, 6, 7}
 	};
+	
 	const int32 LeafOffsets[6][16] = {
 		{0, 2, 16, 18, 4, 6, 20, 22, 32, 34, 48, 50, 36, 38, 52, 54},
 		{9, 11, 25, 27, 13, 15, 29, 31, 41, 43, 57, 59, 45, 47, 61, 63},
@@ -212,16 +236,29 @@ private:
 		{36, 37, 44, 45, 38, 39, 46, 47, 52, 53, 60, 61, 54, 55, 62, 63}
 	};
 
+	//octree generate
 	void UpdateVolume();
 	void InitRasterize();
 	void RasterizeLayer(layerindex_t LayerIndex);
 	void RasterizeLeaf(FVector NodeLocation, int32 LeafIndex);
 	void BuildLinks(layerindex_t LayerIndex);
+	void BuildLinks_Hie(layerindex_t LayerIndex);
+	void BuildSecondsLinks_Hie(layerindex_t LayerIndex);
 
+	//low res navmap generation
+	void BuildHieOctree();
+	void RasterizeFirstLayer_Hie();
+	void RasterizeLayer_Hie(layerindex_t Layer);
+	bool FindLink_Hie(layerindex_t LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
+	bool CombineChildLink_Hie(layerindex_t LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
+	bool GetNodeIndex_Hie(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const;
+	bool GetArrayNodeIndex_Hie(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, TArray<int32>& NodeIndexes) const;
+	
 	//getter setter checker
 	TArray<FSVONavNode>& GetLayer(const layerindex_t LayerIndex) { return Octree.Layers[LayerIndex]; };
 	float GetActualVolumeSize() const { return FMath::Pow(2, VoxelExponent) * (VoxelSize * 4); }
 	int32 GetLayerNodeCount(layerindex_t LayerIndex) const;
+	int32 GetLayerNodeCount_Hie(layerindex_t LayerIndex) const;
 	int32 GetSegmentNodeCount(layerindex_t LayerIndex) const;
 	bool InDebugRange(FVector Location) const;
 	bool GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const;

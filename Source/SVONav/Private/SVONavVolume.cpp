@@ -41,6 +41,7 @@ void ASVONavVolume::UpdateTaskComplete()
 	AsyncTask(ENamedThreads::GameThread, [=]()
 	{
 		DebugDrawOctree();
+		DebugDrawOctree_Hie();
 	});
 #endif
 }
@@ -79,6 +80,7 @@ void ASVONavVolume::Tick(float DeltaTime)
 		else if (bDebugDrawRequested)
 		{
 			DebugDrawOctree();
+			DebugDrawOctree_Hie();
 			bDebugDrawRequested = false;
 #endif
 		}
@@ -93,67 +95,6 @@ void ASVONavVolume::PostRegisterAllComponents()
 void ASVONavVolume::PostUnregisterAllComponents()
 {
 	Super::PostUnregisterAllComponents();
-}
-
-void ASVONavVolume::Initialise()
-{
-	Octree.Reset();
-	BlockedIndices.Empty();
-	NumBytes = 0;
-
-#if WITH_EDITOR
-	FlushDebugDraw();
-#endif
-
-	UpdateVolume();
-}
-
-bool ASVONavVolume::BuildOctree()
-{
-	//init setup
-	Initialise();
-
-
-#if WITH_EDITOR
-	const auto StartTime = high_resolution_clock::now();
-#endif
-
-	// Build the octree
-	InitRasterize();
-	Octree.Leaves.AddDefaulted(BlockedIndices[0].Num() * 8 * 0.25f);
-
-	UE_LOG(LogTemp, Warning, TEXT("Blocked Indice set 0 count: %i"), BlockedIndices[0].Num() * 8 * 0.25f);
-
-	for (int32 I = 0; I < NumLayers; I++) RasterizeLayer(I);
-	for (int32 I = NumLayers - 2; I >= 0; I--) BuildLinks(I);
-
-	// Clean up and cache the octree
-	NumBytes = Octree.GetSize();
-	CollisionQueryParams.ClearIgnoredActors();
-	CachedOctree = Octree;
-
-#if WITH_EDITOR
-	const float Duration = std::chrono::duration_cast<milliseconds>(high_resolution_clock::now() - StartTime).count() /
-		1000.0f;
-
-	// Octree info
-	int32 NumNodes = 0;
-	for (int32 I = 0; I < NumLayers; I++) NumNodes += Octree.Layers[I].Num();
-
-	UE_LOG(LogTemp, Display, TEXT("Generation Time : %f seconds"), Duration);
-	UE_LOG(LogTemp, Display, TEXT("Desired Volume Size : %fcm"), VolumeSize);
-	UE_LOG(LogTemp, Display, TEXT("Actual Volume Size : %fcm"), ActualVolumeSize);
-	UE_LOG(LogTemp, Display, TEXT("Voxel Size : %fcm"), VoxelSize);
-	UE_LOG(LogTemp, Display, TEXT("Voxel Exponent: %i"), VoxelExponent);
-	UE_LOG(LogTemp, Display, TEXT("Total Layers : %i"), NumLayers);
-	UE_LOG(LogTemp, Display, TEXT("Total Nodes : %i"), NumNodes);
-	UE_LOG(LogTemp, Display, TEXT("Total Leaves : %i"), Octree.Leaves.Num());
-	UE_LOG(LogTemp, Display, TEXT("Total Octree Bytes : %i"), NumBytes);
-
-	DebugDrawOctree();
-#endif
-
-	return true;
 }
 
 void ASVONavVolume::UpdateOctree()
@@ -200,12 +141,19 @@ void ASVONavVolume::UpdateVolume()
 {
 	// Calculate the nearest integer exponent to fit the voxel size perfectly within the volume extents
 	VoxelExponent = FMath::RoundToInt(FMath::Log2(VolumeSize / (VoxelSize * 4)));
+	VoxelExponent_Hie = FMath::RoundToInt(FMath::Log2(VolumeSize / (VoxelSize)));
+
 	NumLayers = VoxelExponent + 1;
+	NumLayer_Hie = VoxelExponent_Hie + 1;
 
 	// Build a list of voxel half-scale sizes for each layer
 	VoxelHalfSizes.Reset();
 	VoxelHalfSizes.Reserve(NumLayers);
 	for (int32 I = 0; I < NumLayers; I++) VoxelHalfSizes.Add(GetVoxelScale(I) * 0.5f);
+
+	VoxelHalfSizes_Hie.Reset();
+	VoxelHalfSizes_Hie.Reserve(NumLayer_Hie);
+	for (int32 I = 0; I < NumLayer_Hie; I++) VoxelHalfSizes_Hie.Add(GetVoxelScale_Hie(I) * 0.5f);
 
 	ActualVolumeSize = GetActualVolumeSize();
 	UCubeBuilder* CubeBuilder = Cast<UCubeBuilder>(GEditor->FindBrushBuilder(UCubeBuilder::StaticClass()));
@@ -216,101 +164,6 @@ void ASVONavVolume::UpdateVolume()
 
 	const FBox Bounds = GetComponentsBoundingBox(true);
 	Bounds.GetCenterAndExtents(VolumeOrigin, VolumeExtent);
-}
-
-void ASVONavVolume::InitRasterize()
-{
-	BlockedIndices.Emplace();
-
-	for (int32 I = 0; I < GetLayerNodeCount(1); I++)
-	{
-		FVector Location;
-		GetNodeLocation(1, I, Location);
-		if (IsBlocked(Location, VoxelHalfSizes[1]))
-		{
-			BlockedIndices[0].Add(I);
-		}
-	}
-
-	for (int32 I = 0; I < VoxelExponent; I++)
-	{
-		BlockedIndices.Emplace();
-		for (uint_fast64_t& MortonCode : BlockedIndices[I])
-		{
-			BlockedIndices[I + 1].Add(MortonCode >> 3);
-		}
-	}
-}
-
-void ASVONavVolume::RasterizeLayer(uint8 LayerIndex)
-{
-	Octree.Layers.Emplace();
-	int32 LeafIndex = 0;
-
-	if (LayerIndex == 0)
-	{
-		Octree.Leaves.Reserve(BlockedIndices[0].Num() * 8);
-		Octree.Layers[0].Reserve(BlockedIndices[0].Num() * 8);
-		const int32 NumNodes = GetLayerNodeCount(0);
-
-		for (int32 I = 0; I < NumNodes; I++)
-		{
-			if (BlockedIndices[0].Contains(I >> 3))
-			{
-				const int32 Index = GetLayer(0).Emplace();
-				FSVONavNode& NewNode = Octree.Layers[0][Index];
-				NewNode.MortonCode = I;
-				FVector NodeLocation;
-				GetNodeLocation(0, I, NodeLocation);
-				if (IsBlocked(NodeLocation, VoxelHalfSizes[0]))
-				{
-					RasterizeLeaf(NodeLocation, LeafIndex);
-					NewNode.FirstChild.SetLayerIndex(0);
-					NewNode.FirstChild.SetNodeIndex(LeafIndex);
-					NewNode.FirstChild.SetSubNodeIndex(0);
-					LeafIndex++;
-				}
-				else
-				{
-					Octree.Leaves.AddDefaulted(1);
-					LeafIndex++;
-					NewNode.FirstChild.Invalidate();
-				}
-			}
-		}
-	}
-	else if (GetLayer(LayerIndex - 1).Num() > 0)
-	{
-		Octree.Layers[LayerIndex].Reserve(BlockedIndices[LayerIndex].Num() * 8);
-		const int32 NumNodes = GetLayerNodeCount(LayerIndex);
-		for (int32 I = 0; I < NumNodes; I++)
-		{
-			if (IsAnyMemberBlocked(LayerIndex, I))
-			{
-				// Add a node
-				const int32 Index = GetLayer(LayerIndex).Emplace();
-				FSVONavNode& NewNode = GetLayer(LayerIndex)[Index];
-				NewNode.MortonCode = I;
-				int32 ChildIndex = 0;
-				if (GetNodeIndex(LayerIndex - 1, NewNode.MortonCode << 3, ChildIndex))
-				{
-					NewNode.FirstChild.SetLayerIndex(LayerIndex - 1);
-					NewNode.FirstChild.SetNodeIndex(ChildIndex);
-					for (int32 C = 0; C < 8; C++)
-					{
-						GetLayer(NewNode.FirstChild.GetLayerIndex())[NewNode.FirstChild.GetNodeIndex() + C].Parent.
-							SetLayerIndex(LayerIndex);
-						GetLayer(NewNode.FirstChild.GetLayerIndex())[NewNode.FirstChild.GetNodeIndex() + C].Parent.
-							SetNodeIndex(Index);
-					}
-				}
-				else
-				{
-					NewNode.FirstChild.Invalidate();
-				}
-			}
-		}
-	}
 }
 
 bool ASVONavVolume::IsAnyMemberBlocked(layerindex_t LayerIndex, mortoncode_t aCode) const
@@ -344,71 +197,6 @@ bool ASVONavVolume::GetIndexForCode(layerindex_t LayerIndex, mortoncode_t aCode,
 	}
 
 	return false;
-}
-
-void ASVONavVolume::RasterizeLeaf(FVector NodeLocation, int32 LeafIndex)
-{
-	const FVector Location = NodeLocation - VoxelHalfSizes[0];
-	const float VoxelScale = VoxelHalfSizes[0] * 0.5f;
-	for (int32 I = 0; I < 64; I++)
-	{
-		uint_fast32_t X, Y, Z;
-		morton3D_64_decode(I, X, Y, Z);
-		const FVector VoxelLocation = Location + FVector(X * VoxelScale, Y * VoxelScale, Z * VoxelScale) + VoxelScale *
-			0.5f;
-		if (LeafIndex >= Octree.Leaves.Num() - 1) Octree.Leaves.AddDefaulted(1);
-
-		if (IsBlocked(VoxelLocation, VoxelScale * 0.5f)) Octree.Leaves[LeafIndex].SetSubNode(I);
-	}
-}
-
-void ASVONavVolume::BuildLinks(uint8 LayerIndex)
-{
-	if (Octree.Layers.Num() == 0) return;
-	TArray<FSVONavNode>& layer = GetLayer(LayerIndex);
-	layerindex_t searchLayer = LayerIndex;
-
-	// For each node
-	for (nodeindex_t i = 0; i < layer.Num(); i++)
-	{
-		FSVONavNode& node = layer[i];
-
-		// Get our world co-ordinate
-		uint_fast32_t x, y, z;
-		morton3D_64_decode(node.MortonCode, x, y, z);
-		nodeindex_t backtrackIndex = -1;
-		nodeindex_t index = i;
-		FVector nodePos;
-		GetNodeLocation(LayerIndex, node.MortonCode, nodePos);
-
-		// For each direction
-		for (int d = 0; d < 6; d++)
-		{
-			FSVONavLink& linkToUpdate = node.Neighbours[d];
-
-			backtrackIndex = index;
-
-			while (!FindLink(searchLayer, index, d, linkToUpdate, nodePos) && LayerIndex < Octree.Layers.Num() - 2)
-			{
-				FSVONavLink& parent = GetLayer(searchLayer)[index].Parent;
-				if (parent.IsValid())
-				{
-					index = parent.NodeIndex;
-					searchLayer = parent.LayerIndex;
-				}
-				else
-				{
-					searchLayer++;
-					GetIndexForCode(searchLayer, node.MortonCode >> 3, index);
-				}
-			}
-			index = backtrackIndex;
-			searchLayer = LayerIndex;
-		}
-	}
-	if (LayerIndex == 0)
-	{
-	}
 }
 
 bool ASVONavVolume::FindLink(uint8 LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link,
@@ -905,6 +693,7 @@ void ASVONavVolume::RequestOctreeDebugDraw()
 	bDebugDrawRequested = true;
 
 	DebugDrawOctree();
+	DebugDrawOctree_Hie();
 	bDebugDrawRequested = false;
 }
 
