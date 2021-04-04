@@ -50,7 +50,7 @@ bool ASVONavVolume::BuildOctree()
 	DebugDrawOctree();
 	DebugDrawOctree_Hie();
 #endif
-	for(int32 i= 0; i < NumLayer_Hie; i ++)
+	for (int32 i = 0; i < NumLayer_Hie; i ++)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Layer %i num: %i"), i, HieOctree.Layers[i].Num());
 	}
@@ -72,7 +72,7 @@ void ASVONavVolume::DebugDrawOctree_Hie()
 			}
 		}
 	}
-	
+
 	if (bDisplayNeighbourLink)
 	{
 		DebugLinks.Empty();
@@ -464,17 +464,31 @@ bool ASVONavVolume::GetArrayNodeIndex_Hie(layerindex_t LayerIndex, uint_fast64_t
 		if (OctreeLayer[Mean].MortonCode < NodeMortonCode) Start = Mean + 1;
 		else if (OctreeLayer[Mean].MortonCode == NodeMortonCode)
 		{
-			int32 LayerDupOffset = LayerIndex * 3;
-			int32 StartIndex = FMath::Clamp(Mean - LayerDupOffset, Start, End);
-			int32 EndIndex = FMath::Clamp(Mean + LayerDupOffset, Start, End);
-			for (int I = StartIndex; I <= EndIndex; I++)
+			// layer maybe nodes with same morton code
+			int32 LayerDupOffset = 4 ^ LayerIndex - 1;
+			/*int32 StartIndex = FMath::Clamp(Mean - LayerDupOffset, 0, OctreeLayer.Num() - 1);
+			int32 EndIndex = FMath::Clamp(Mean + LayerDupOffset, 0, OctreeLayer.Num() - 1);*/
+
+			NodeIndexes.Add(Mean);
+
+			for (int32 I = 1; I <= LayerDupOffset; I++)
 			{
-				if (OctreeLayer[I].MortonCode == NodeMortonCode)
+				bool HasDuplicateCode = false;
+				if (Mean + I < OctreeLayer.Num() && OctreeLayer[Mean + I].MortonCode == NodeMortonCode)
 				{
-					NodeIndexes.Add(I);
+					HasDuplicateCode = true;
+					NodeIndexes.Add(Mean + I);
+				}
+				if (Mean - I >= 0 && OctreeLayer[Mean - I].MortonCode == NodeMortonCode)
+				{
+					HasDuplicateCode = true;
+					NodeIndexes.Insert(Mean - I, 0);
+				}
+				if (!HasDuplicateCode)
+				{
+					return true;
 				}
 			}
-			return true;
 		}
 		else End = Mean - 1;
 		Mean = (Start + End) * 0.5f;
