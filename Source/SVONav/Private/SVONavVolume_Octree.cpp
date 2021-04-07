@@ -90,6 +90,33 @@ void ASVONavVolume::DebugDrawOctree_Hie()
 		}
 	}
 
+	for(int32 I = 0; I < NumLayer_Hie; I++)
+	{
+		if(HierarchyStartIndex[I] < HieOctree.Layers[I].Num()-1)
+		{
+			for(int32 C = HierarchyStartIndex[I]; C < HieOctree.Layers[I].Num(); C++)
+			{
+				FVector NodeLocation;
+				GetNodeLocation_Hie(I, HieOctree.Layers[I][C].MortonCode, NodeLocation);
+				DebugDrawVoxel(NodeLocation, FVector(VoxelHalfSizes_Hie[I]), GetLayerColour_Hie(I));
+			}
+		}
+	}
+	for(int32 R = 0; R < HieOctree.Layers.Num(); R++)
+	{
+		for(int32 V = 0; V < HieOctree.Layers[R].Num(); V++)
+		{
+			uint_fast32_t X, Y, Z;
+			morton3D_64_decode(HieOctree.Layers[R][V].MortonCode, X, Y, Z);
+			int32 C = GetSegmentNodeCount_Hie(R);
+			FIntVector S(static_cast<int32>(X), static_cast<int32>(Y), static_cast<int32>(Z));
+			if(S.X >= C || S.Y >= C || S.Z >= C)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Node Layer: %i, Node Index: %i, MortonCode: %i"), R, V, HieOctree.Layers[R][V].MortonCode);	
+				//UE_LOG(LogTemp, Warning, TEXT("Node Layer: %i, Node Index: %i, MortonCode: %i, %i, %i"),R, V, X, Y, Z);	
+			}
+		}
+	}
 
 	/*FVector NodeLocation;
 	mortoncode_t Code = morton3D_64_encode(0,1,0);
@@ -385,6 +412,11 @@ void ASVONavVolume::RasterizSparseLayer_Hie(layerindex_t LayerIndex)
 			const int32 Index = HieOctree.Layers[LayerIndex].Emplace();
 			FSVONavNode& NewNode = HieOctree.Layers[LayerIndex][Index];
 			NewNode.MortonCode = I;
+			check(NewNode.MortonCode != 1714 && NewNode.MortonCode != 626 && NewNode.MortonCode != 1073741902);
+			if(/*LayerIndex == 4 && Index ==0*/ I > 3000)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Something"));
+			}
 		}
 	}
 }
@@ -820,12 +852,13 @@ void ASVONavVolume::BuildHierarchyNodes_Hie(layerindex_t Layer)
 	{
 		FSVONavNode& Child = HieOctree.Layers[ChildLayer][I];
 		mortoncode_t ParentCode = Child.MortonCode >> 3;
+		mortoncode_t CacheCode = ParentCode;
 		if (!UniqueParentCodes.Contains(ParentCode))
 		{
 			UniqueParentCodes.Add(ParentCode);
 
 			TArray<mortoncode_t> ChildCodes;
-			mortoncode_t FirstChildCode = ParentCode << 3;
+			mortoncode_t FirstChildCode = CacheCode  << 3;
 			ChildCodes.Add(FirstChildCode);
 
 			uint_fast32_t X, Y, Z;
@@ -983,6 +1016,7 @@ void ASVONavVolume::BuildHierarchyNodes_Hie(layerindex_t Layer)
 				}
 				FSVONavNode& Parent = HieOctree.Layers[Layer][ParentIndex];
 				Parent.MortonCode = ParentCode;
+				check(ParentCode != 1714 && ParentCode != 626 && ParentCode != 1073741902);
 
 				Parent.FirstChild.SetLayerIndex(ChildLayer);
 				Parent.FirstChild.SetNodeIndex(Region[J][0]);

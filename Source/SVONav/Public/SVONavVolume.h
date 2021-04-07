@@ -44,7 +44,7 @@ public:
 
 	// Draw distance for debug lines
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging")
-	float DebugDistance = 5000.f;
+	float DebugDistance = 20000.f;
 
 	// Show the entire volume bounds
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging")
