@@ -106,6 +106,26 @@ struct SVONAV_API FSVONavNode
 
 	bool HasChildren() const { return FirstChild.IsValid(); }
 
+	int32 GetChildNum() const
+	{
+		int32 ChildCount = 0;
+		for(int32 i = 0; i < 8; i++)
+		{
+			if(Childs[i].IsValid()) ChildCount ++;
+		}
+		return ChildCount;
+	}
+
+	int32 GetNeighbourNum() const
+	{
+		int32 NeighbourCount = 0;
+		for(int32 i = 0; i < 12; i++)
+		{
+			if(Neighbours[i].IsValid()) NeighbourCount ++;
+		}
+		return NeighbourCount;
+	}
+
 	bool operator==(const FSVONavNode& Node) const
 	{
 		return MortonCode == Node.MortonCode;

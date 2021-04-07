@@ -146,6 +146,7 @@ public:
 	void GetMortonVoxel_Hie(const FVector& Location, int32 LayerIndex, FIntVector& MortonLocation) const;
 	FBox GetBoundingBox() const;
 	bool GetLink(const FVector& Location, FSVONavLink& Link);
+	bool GetLink_Hie(const FVector& Location, FSVONavLink& Link);
 	const FSVONavLeafNode& GetLeafNode(nodeindex_t aIndex) const;
 	bool FindAccessibleLink(FVector& Location, FSVONavLink& Link);
 	float GetVoxelScale(uint8 LayerIndex) const;
@@ -163,6 +164,7 @@ public:
 	void GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
 	void GetNeighbourLinks_Hie(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
 	bool IsWithinBounds(const FVector Location) const { return GetBoundingBox().IsInside(Location); }
+	int32 GetLayerCount_Hie() const {return HieOctree.Layers.Num();}
 
 	//debug draw
 	void FlushDebugDraw() const;
@@ -181,6 +183,7 @@ private:
 	
 	FSVONavOctree HieOctree;
 	TArray<float> VoxelHalfSizes_Hie;
+	TArray<TSet<uint_fast64_t>> BlockedIndicesHie;
 	int32 VoxelExponent_Hie;
 	int32 NumLayer_Hie;
 
@@ -192,6 +195,8 @@ private:
 	bool bOctreeLocked = false;
 	bool bUpdateRequested;
 
+	TArray<int32> HierarchyStartIndex;
+	
 #if WITH_EDITOR
 	bool bDebugDrawRequested;
 	TArray<FSVONavDebugLink> DebugLinks;
@@ -244,15 +249,20 @@ private:
 	void BuildLinks(layerindex_t LayerIndex);
 	void BuildLinks_Hie(layerindex_t LayerIndex);
 	void BuildSecondsLinks_Hie(layerindex_t LayerIndex);
+	void BuildHierarchyNodes_Hie(layerindex_t LayerIndex);
 
 	//low res navmap generation
 	void BuildHieOctree();
 	void RasterizeFirstLayer_Hie();
+	void RasterizSparseLayer_Hie(layerindex_t LayerIndex);
 	void RasterizeLayer_Hie(layerindex_t Layer);
 	bool FindLink_Hie(layerindex_t LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
+	bool FindLinkViaCode_Hie(layerindex_t LayerIndex, mortoncode_t MortonCode, mortoncode_t OriginalCode, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
+	bool FindLinkViaCodeChildlessNode_Hie(layerindex_t LayerIndex, mortoncode_t MortonCode, mortoncode_t OriginalCode, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
 	bool CombineChildLink_Hie(layerindex_t LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
 	bool GetNodeIndex_Hie(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const;
-	bool GetArrayNodeIndex_Hie(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, TArray<int32>& NodeIndexes) const;
+	TArray<int32> GetArrayNodeIndex_Hie(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode);
+	TArray<int32> GetArrayNodeIndex_HieExtra(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode);
 	
 	//getter setter checker
 	TArray<FSVONavNode>& GetLayer(const layerindex_t LayerIndex) { return Octree.Layers[LayerIndex]; };
@@ -260,6 +270,7 @@ private:
 	int32 GetLayerNodeCount(layerindex_t LayerIndex) const;
 	int32 GetLayerNodeCount_Hie(layerindex_t LayerIndex) const;
 	int32 GetSegmentNodeCount(layerindex_t LayerIndex) const;
+	int32 GetSegmentNodeCount_Hie(layerindex_t LayerIndex) const;
 	bool InDebugRange(FVector Location) const;
 	bool GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const;
 	int32 GetInsertIndex(layerindex_t LayerIndex, uint_fast64_t MortonCode) const;

@@ -109,8 +109,10 @@ void ASVONavVolume::UpdateOctree()
 void ASVONavVolume::Serialize(FArchive& Ar)
 {
 	Super::Serialize(Ar);
-	Ar << Octree;
-	Ar << VoxelHalfSizes;
+	//Ar << Octree;
+	//Ar << VoxelHalfSizes;
+	Ar << HieOctree;
+	Ar << VoxelHalfSizes_Hie;
 	Ar << VolumeExtent;
 	NumBytes = Octree.GetSize();
 }
