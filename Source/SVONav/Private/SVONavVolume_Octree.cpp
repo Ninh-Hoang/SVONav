@@ -73,24 +73,85 @@ void ASVONavVolume::DebugDrawOctree_Hie()
 			}
 		}
 	}
-
+	
+	DebugLinks.Empty();
 	if (bDisplayNeighbourLink)
 	{
-		DebugLinks.Empty();
 		for (int32 i = 1; i < NumLayer_Hie; i++)
 		{
 			BuildSecondsLinks_Hie(i);
 		}
-
-		if (!GetWorld()) return;
-		for (auto& Link : DebugLinks)
+	}
+	
+	for(auto& DebugVoxel : DebugVoxelList)
+	{
+		FSVONavNode& Node = HieOctree.Layers[DebugVoxel.Layer][DebugVoxel.Index];
+		FVector NodeLocation, ParentLocation;
+		GetNodeLocation_Hie(DebugVoxel.Layer, Node.MortonCode, NodeLocation);
+		DebugDrawVoxel(NodeLocation, FVector(VoxelHalfSizes_Hie[DebugVoxel.Layer]), GetLayerColour_Hie(DebugVoxel.Layer));
+		if(Node.Parent.IsValid())
 		{
-			DrawDebugLine(GetWorld(), Link.Start, Link.End, GetLayerColour_Hie(Link.LayerIndex), true, -1, 0,
-                          LineScale);
+			GetNodeLocation_Hie(DebugVoxel.Layer, Node.MortonCode, NodeLocation);
+			DebugLinks.Add(FSVONavDebugLink(NodeLocation, ParentLocation,Node.Parent.LayerIndex));
+			UE_LOG(LogTemp, Warning, TEXT("Parent Layer: %i, Parent Index: %i"), Node.Parent.GetLayerIndex(), Node.Parent.GetNodeIndex());
+		}
+		for(auto& Link : Node.Neighbours)
+		{
+			if(Link.IsValid())
+			{
+				FVector NeighbourLocation;
+				GetNodeLocation_Hie(Link.GetLayerIndex(), GetNode_Hie(Link).MortonCode, NeighbourLocation);
+				DebugLinks.Add(FSVONavDebugLink(NodeLocation, NeighbourLocation, Link.GetLayerIndex()));
+				UE_LOG(LogTemp, Warning, TEXT("Neighbour Layer: %i, Neighbour Index: %i"), Link.GetLayerIndex(), Link.GetNodeIndex());
+			}
+		}
+		for(auto& Link : Node.Childs)
+		{
+			if(Link.IsValid())
+			{
+				FVector ChildLocation;
+				GetNodeLocation_Hie(Link.GetLayerIndex(), GetNode_Hie(Link).MortonCode, ChildLocation);
+				DebugLinks.Add(FSVONavDebugLink(NodeLocation, ChildLocation, Link.GetLayerIndex()));
+				UE_LOG(LogTemp, Warning, TEXT("Child Layer: %i, Child Index: %i"), Link.GetLayerIndex(), Link.GetNodeIndex());
+			}
 		}
 	}
 
-	for(int32 I = 0; I < NumLayer_Hie; I++)
+	/*int32 L = 4;
+	for (int32 i = 0; i < HieOctree.Layers[L].Num(); i++)
+	{
+		for(int32 E = 0; E < 8; E++)
+		{
+			FSVONavLink& ChildLink = HieOctree.Layers[L][i].Childs[E];
+			if(ChildLink.IsValid())
+			{
+				FVector ParentLocation, ChildLocation;
+				GetNodeLocation_Hie(L, HieOctree.Layers[L][i].MortonCode, ParentLocation);
+				GetNodeLocation_Hie(ChildLink.GetLayerIndex(), GetNode_Hie(ChildLink).MortonCode, ChildLocation);
+				DebugLinks.Add(FSVONavDebugLink(ParentLocation, ChildLocation, L));
+			}
+		}
+	}*/
+	/*for (int32 i = 0; i < HieOctree.Layers[L].Num(); i++)
+	{
+		FSVONavLink& ChildLink = HieOctree.Layers[L][i].Parent;
+		if(ChildLink.IsValid())
+		{
+			FVector ParentLocation, ChildLocation;
+			GetNodeLocation_Hie(L, HieOctree.Layers[L][i].MortonCode, ParentLocation);
+			GetNodeLocation_Hie(ChildLink.GetLayerIndex(), GetNode_Hie(ChildLink).MortonCode, ChildLocation);
+			DebugLinks.Add(FSVONavDebugLink(ParentLocation, ChildLocation, L));
+		}
+	}*/
+	UE_LOG(LogTemp, Warning, TEXT("DebugLink Count: %i"), DebugLinks.Num());
+	if (!GetWorld()) return;
+	for (auto& Link : DebugLinks)
+	{
+		DrawDebugLine(GetWorld(), Link.Start, Link.End, GetLayerColour_Hie(Link.LayerIndex), true, -1, 0,
+                      LineScale);
+	}
+
+	/*for(int32 I = 0; I < NumLayer_Hie; I++)
 	{
 		if(HierarchyStartIndex[I] < HieOctree.Layers[I].Num()-1)
 		{
@@ -101,7 +162,7 @@ void ASVONavVolume::DebugDrawOctree_Hie()
 				DebugDrawVoxel(NodeLocation, FVector(VoxelHalfSizes_Hie[I]), GetLayerColour_Hie(I));
 			}
 		}
-	}
+	}*/
 	for(int32 R = 0; R < HieOctree.Layers.Num(); R++)
 	{
 		for(int32 V = 0; V < HieOctree.Layers[R].Num(); V++)
@@ -117,6 +178,11 @@ void ASVONavVolume::DebugDrawOctree_Hie()
 			}
 		}
 	}
+
+	/*for(int32 R = 0; R < HieOctree.Layers[4].Num(); R++)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ChildNum: %i"),HieOctree.Layers[4][R].GetChildNum());	
+	}*/
 
 	/*FVector NodeLocation;
 	mortoncode_t Code = morton3D_64_encode(0,1,0);
@@ -412,11 +478,6 @@ void ASVONavVolume::RasterizSparseLayer_Hie(layerindex_t LayerIndex)
 			const int32 Index = HieOctree.Layers[LayerIndex].Emplace();
 			FSVONavNode& NewNode = HieOctree.Layers[LayerIndex][Index];
 			NewNode.MortonCode = I;
-			check(NewNode.MortonCode != 1714 && NewNode.MortonCode != 626 && NewNode.MortonCode != 1073741902);
-			if(/*LayerIndex == 4 && Index ==0*/ I > 3000)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("Something"));
-			}
 		}
 	}
 }
@@ -434,7 +495,7 @@ void ASVONavVolume::BuildSecondsLinks_Hie(layerindex_t LayerIndex)
 		if (Node.HasChildren())
 		{
 			TArray<FSVONavLink> NeighbourLinks;
-			for (int32 C = 0; C < 8; C ++)
+			for (int32 C = 0; C < Node.Childs.Num(); C ++)
 			{
 				if (!Node.Childs[C].IsValid()) continue;
 				const FSVONavNode& Child = GetNode_Hie(Node.Childs[C]);
@@ -452,8 +513,11 @@ void ASVONavVolume::BuildSecondsLinks_Hie(layerindex_t LayerIndex)
 						}
 						else if (ChildNeighbourLink.GetLayerIndex() < LayerIndex)
 						{
-							InitLink.SetNodeIndex(ChildNeighbourNode.Parent.NodeIndex);
-							InitLink.SetLayerIndex(ChildNeighbourNode.Parent.LayerIndex);
+							if(ChildNeighbourNode.Parent.LayerIndex != LayerIndex || ChildNeighbourNode.Parent.NodeIndex != I)
+							{
+								InitLink.SetNodeIndex(ChildNeighbourNode.Parent.NodeIndex);
+								InitLink.SetLayerIndex(ChildNeighbourNode.Parent.LayerIndex);
+							}
 						}
 						//ConnectedNeighbourIndex.AddUnique(ChildNeighbourNode.Parent.NodeIndex);
 						if (!NeighbourLinks.Contains(InitLink) && InitLink.IsValid())
@@ -880,76 +944,7 @@ void ASVONavVolume::BuildHierarchyNodes_Hie(layerindex_t Layer)
 
 			for (int32 V = 0; V < ChildIndexes.Num(); V++)
 				HieOctree.Layers[ChildLayer][ChildIndexes[V]].Parent.SetLayerIndex(Layer);
-
-			/*TArray<TArray<int32>> ChildGroups;
-			TArray<TArray<int32>> Region = ChildGroups;
-			for (int32 B = 0; B < ChildIndexes.Num(); B++)
-			{
-				ChildGroups.Emplace();
-
-				for (int32 C = 0; C < 12; C++)
-				{
-					FSVONavLink& NeighbourLink = HieOctree.Layers[ChildLayer][ChildIndexes[B]].Neighbours[C];
-					int32 CurrentNeighbourIndex = NeighbourLink.NodeIndex;
-					if (NeighbourLink.IsValid() && NeighbourLink.GetLayerIndex() == ChildLayer)
-					{
-						if (ChildIndexes.Contains(CurrentNeighbourIndex))
-						{
-							ChildGroups[B].AddUnique(CurrentNeighbourIndex);
-
-							if (Region.Num() < 1)
-							{
-								Region.Emplace();
-								Region[0].AddUnique(CurrentNeighbourIndex);
-								Region[0].AddUnique(ChildIndexes[B]);
-							}
-							else
-							{
-								bool RegionExisted = false;
-								TArray<int32> RegionContainIndex;
-								for (int32 D = 0; D < Region.Num(); D++)
-								{
-									if (Region[D].Contains(CurrentNeighbourIndex) || Region[D].Contains(ChildIndexes[B])
-									)
-									{
-										RegionContainIndex.AddUnique(D);
-									}
-								}
-
-								if (RegionContainIndex.Num() < 1)
-								{
-									int32 RegionIndex = Region.Emplace();
-									Region[RegionIndex].AddUnique(CurrentNeighbourIndex);
-									Region[RegionIndex].AddUnique(ChildIndexes[B]);
-								}
-								else if (RegionContainIndex.Num() == 1)
-								{
-									Region[RegionContainIndex[0]].AddUnique(CurrentNeighbourIndex);
-									Region[RegionContainIndex[0]].AddUnique(ChildIndexes[B]);
-								}
-								else
-								{
-									for (int32 G = RegionContainIndex.Num() - 1; G > 0; G--)
-									{
-										for (int32 F = 0; F < Region[G].Num(); F++)
-										{
-											//Region[RegionContainIndex[0]].AddUnique(Region[RegionContainIndex[G]][F]);
-											int32 RCI = RegionContainIndex[0];
-											int32 RCI2 = RegionContainIndex[G];
-											TArray<int32>& ar = Region[RCI2];
-											int32 R2 = ar[F];
-											Region[RCI].AddUnique(R2);
-										}
-										Region.RemoveAt(RegionContainIndex[G]);
-									}
-								}
-							}
-						}
-						if (ChildGroups[B].Num() > 3) break;
-					}
-				}
-			}*/
-
+			
 			TArray<TArray<int32>> ChildGroups;
 			for (int32 B = 0; B < ChildIndexes.Num(); B++)
 			{
@@ -993,22 +988,15 @@ void ASVONavVolume::BuildHierarchyNodes_Hie(layerindex_t Layer)
 				else C = Region.Num() - 1;
 			}
 
-			/*for (int32 F = 0; F < ChildGroups.Num(); F++)
-			{
-				if (ChildGroups[F].Num() < 1)
-				{
-					int32 RegionIndex = Region.Emplace();
-					Region[RegionIndex].Add(ChildIndexes[F]);
-				}
-			}*/
-
-			//if(Layer ==2) UE_LOG(LogTemp, Warning, TEXT("Region Num %i"), Region.Num());
 			for (int32 J = 0; J < Region.Num(); J++)
 			{
 				int32 ParentIndex = 0;
 				if (J == 0)
 				{
-					GetNodeIndex_Hie(Layer, ParentCode, ParentIndex);
+					if(!GetNodeIndex_Hie(Layer, ParentCode, ParentIndex))
+					{
+						ParentIndex = HieOctree.Layers[Layer].Emplace();
+					}
 				}
 				else
 				{
@@ -1016,22 +1004,30 @@ void ASVONavVolume::BuildHierarchyNodes_Hie(layerindex_t Layer)
 				}
 				FSVONavNode& Parent = HieOctree.Layers[Layer][ParentIndex];
 				Parent.MortonCode = ParentCode;
-				check(ParentCode != 1714 && ParentCode != 626 && ParentCode != 1073741902);
 
 				Parent.FirstChild.SetLayerIndex(ChildLayer);
 				Parent.FirstChild.SetNodeIndex(Region[J][0]);
 				int32 ValidChildNum = Region[J].Num();
+				/*if(ValidChildNum  <= 8)
+				{
+					for(int32 Y = 0; Y < ChildGroups.Num(); Y++)
+					{
+						
+					}
+				}*/
+				
 				for (int32 M = 0; M < ValidChildNum; M++)
 				{
 					HieOctree.Layers[ChildLayer][Region[J][M]].Parent.SetNodeIndex(ParentIndex);
-
-					Parent.Childs[M].SetLayerIndex(ChildLayer);
-					Parent.Childs[M].SetNodeIndex(Region[J][M]);
+					
+					//Parent.Childs[M].SetLayerIndex(ChildLayer);
+					//Parent.Childs[M].SetNodeIndex(Region[J][M]);
+					Parent.Childs.Add(FSVONavLink(ChildLayer, Region[J][M],0));
 				}
-				for (int32 P = ValidChildNum; P < 8; P++)
+				/*for (int32 P = ValidChildNum; P < 8; P++)
 				{
 					Parent.Childs[P].Invalidate();
-				}
+				}*/
 			}
 		}
 	}

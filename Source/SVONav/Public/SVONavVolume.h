@@ -74,6 +74,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging|Voxels")
 	float LineScale = 0.0f;
 
+	// The scaling factor for debug line drawing. Set to zero for fastest performance
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging|Voxel")
+	TArray<FSVONavDebugVoxel> DebugVoxelList;
+
 	// The colours for debug drawing each layer. Colours added will be spread across a gradient
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Debugging|Voxels|Colours")
 	TArray<FColor> LayerColours = {FColor::Magenta, FColor::Blue, FColor::Cyan, FColor::Green};

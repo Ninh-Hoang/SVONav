@@ -95,7 +95,7 @@ struct SVONAV_API FSVONavNode
 	FSVONavLink Parent;
 	FSVONavLink FirstChild;
 	FSVONavLink Neighbours[12];
-	FSVONavLink Childs[8];
+	TArray<FSVONavLink> Childs;
 
 	FSVONavNode() :
 		MortonCode(0),
@@ -109,9 +109,9 @@ struct SVONAV_API FSVONavNode
 	int32 GetChildNum() const
 	{
 		int32 ChildCount = 0;
-		for(int32 i = 0; i < 8; i++)
+		for (int32 i = 0; i < Childs.Num(); i++)
 		{
-			if(Childs[i].IsValid()) ChildCount ++;
+			if (Childs[i].IsValid()) ChildCount ++;
 		}
 		return ChildCount;
 	}
@@ -119,9 +119,9 @@ struct SVONAV_API FSVONavNode
 	int32 GetNeighbourNum() const
 	{
 		int32 NeighbourCount = 0;
-		for(int32 i = 0; i < 12; i++)
+		for (int32 i = 0; i < 12; i++)
 		{
-			if(Neighbours[i].IsValid()) NeighbourCount ++;
+			if (Neighbours[i].IsValid()) NeighbourCount ++;
 		}
 		return NeighbourCount;
 	}
@@ -142,7 +142,7 @@ FORCEINLINE FArchive& operator <<(FArchive& Ar, FSVONavNode& Node)
 	{
 		Ar << Node.Neighbours[I];
 	}
-	for (int32 I = 0; I < 8; I++)
+	for (int32 I = 0; I < Node.Childs.Num(); I++)
 	{
 		Ar << Node.Childs[I];
 	}
@@ -197,6 +197,22 @@ struct SVONAV_API FSVONavDebugLocation
 	float LineScale;
 
 	FSVONavDebugLocation(): Location(FVector::ZeroVector), Colour(FColor::Black), LineScale(0)
+	{
+	}
+};
+
+USTRUCT(BlueprintType)
+struct SVONAV_API FSVONavDebugVoxel
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere)
+	int32 Layer;
+
+	UPROPERTY(EditAnywhere)
+	int32 Index;
+
+	FSVONavDebugVoxel(): Layer(0), Index(0)
 	{
 	}
 };
@@ -305,7 +321,7 @@ UENUM()
 enum class ESVONavAlgorithm: uint8
 {
 	GreedyAStar UMETA(DisplayName="GreedyA*"),
-    Testing UMETA(DisplayName="Testing")
+	Testing UMETA(DisplayName="Testing")
 };
 
 UENUM()
@@ -358,7 +374,7 @@ struct SVONAV_API FSVONavPathFindingConfig
 
 	UPROPERTY(BlueprintReadWrite)
 	ESVONavAlgorithm Algorithm;
-	
+
 	UPROPERTY(BlueprintReadWrite)
 	ESVONavHeuristic Heuristic;
 
