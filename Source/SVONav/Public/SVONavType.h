@@ -142,10 +142,8 @@ FORCEINLINE FArchive& operator <<(FArchive& Ar, FSVONavNode& Node)
 	{
 		Ar << Node.Neighbours[I];
 	}
-	for (int32 I = 0; I < Node.Childs.Num(); I++)
-	{
-		Ar << Node.Childs[I];
-	}
+
+	Ar << Node.Childs;
 
 	return Ar;
 }

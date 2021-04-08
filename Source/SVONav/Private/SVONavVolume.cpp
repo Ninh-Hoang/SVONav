@@ -111,10 +111,10 @@ void ASVONavVolume::Serialize(FArchive& Ar)
 	Super::Serialize(Ar);
 	//Ar << Octree;
 	//Ar << VoxelHalfSizes;
-	Ar << HieOctree;
+	//Ar << HieOctree;
 	Ar << VoxelHalfSizes_Hie;
 	Ar << VolumeExtent;
-	NumBytes = Octree.GetSize();
+	//NumBytes = Octree.GetSize();
 }
 
 void ASVONavVolume::GetVolumeExtents(const FVector& Location, int32 LayerIndex, FIntVector& Extents) const

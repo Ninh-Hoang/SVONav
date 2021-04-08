@@ -251,19 +251,17 @@ private:
 	void RasterizeLayer(layerindex_t LayerIndex);
 	void RasterizeLeaf(FVector NodeLocation, int32 LeafIndex);
 	void BuildLinks(layerindex_t LayerIndex);
-	void BuildLinks_Hie(layerindex_t LayerIndex);
-	void BuildSecondsLinks_Hie(layerindex_t LayerIndex);
+	void BuildLayer0Link_Hie(layerindex_t LayerIndex);
+	void BuildLayerLink_Hie(layerindex_t LayerIndex);
 	void BuildHierarchyNodes_Hie(layerindex_t LayerIndex);
 
 	//low res navmap generation
 	void BuildHieOctree();
-	void RasterizeFirstLayer_Hie();
-	void RasterizSparseLayer_Hie(layerindex_t LayerIndex);
-	void RasterizeLayer_Hie(layerindex_t Layer);
+	void RasterizeLayer1_Hie();
+	void RasterizeSparseLayer_Hie(layerindex_t LayerIndex);
 	bool FindLink_Hie(layerindex_t LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
 	bool FindLinkViaCode_Hie(layerindex_t LayerIndex, mortoncode_t MortonCode, mortoncode_t OriginalCode, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
 	bool FindLinkViaCodeChildlessNode_Hie(layerindex_t LayerIndex, mortoncode_t MortonCode, mortoncode_t OriginalCode, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
-	bool CombineChildLink_Hie(layerindex_t LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
 	bool GetNodeIndex_Hie(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const;
 	TArray<int32> GetArrayNodeIndex_Hie(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode);
 	TArray<int32> GetArrayNodeIndex_HieExtra(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode);
