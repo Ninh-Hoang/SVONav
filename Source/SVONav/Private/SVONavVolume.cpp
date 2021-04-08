@@ -70,7 +70,7 @@ void ASVONavVolume::Tick(float DeltaTime)
 			LockOctree();
 
 			// Execute UpdateOctree as background task
-			(new FAutoDeleteAsyncTask<FSVONavUpdateOctreeTask>(this, OnUpdateComplete))->StartBackgroundTask();
+			//(new FAutoDeleteAsyncTask<FSVONavUpdateOctreeTask>(this, OnUpdateComplete))->StartBackgroundTask();
 
 			// Update complete
 			bUpdateRequested = false;
@@ -109,12 +109,12 @@ void ASVONavVolume::UpdateOctree()
 void ASVONavVolume::Serialize(FArchive& Ar)
 {
 	Super::Serialize(Ar);
-	//Ar << Octree;
-	//Ar << VoxelHalfSizes;
+	Ar << Octree;
+	Ar << VoxelHalfSizes;
 	//Ar << HieOctree;
-	Ar << VoxelHalfSizes_Hie;
+	//Ar << VoxelHalfSizes_Hie;
 	Ar << VolumeExtent;
-	//NumBytes = Octree.GetSize();
+	NumBytes = Octree.GetSize();
 }
 
 void ASVONavVolume::GetVolumeExtents(const FVector& Location, int32 LayerIndex, FIntVector& Extents) const
@@ -552,13 +552,6 @@ int32 ASVONavVolume::GetSegmentNodeCount(uint8 LayerIndex) const
 	return FMath::Pow(2, VoxelExponent - LayerIndex);
 }
 
-bool ASVONavVolume::InDebugRange(FVector Location) const
-{
-	if (!GetWorld()) return true;
-	if (GetWorld()->ViewLocationsRenderedLastFrame.Num() == 0) return true;
-	return FVector::Dist(GetWorld()->ViewLocationsRenderedLastFrame[0], Location) < DebugDistance;
-}
-
 bool ASVONavVolume::GetNodeIndex(const uint8 LayerIndex, const uint_fast64_t NodeMortonCode, int32& NodeIndex) const
 {
 	const auto& OctreeLayer = Octree.Layers[LayerIndex];
@@ -621,6 +614,15 @@ bool ASVONavVolume::IsBlocked(const FVector& Location, float Size, TArray<FOverl
 	);
 }
 
+#if WITH_EDITOR
+
+bool ASVONavVolume::InDebugRange(FVector Location) const
+{
+	if (!GetWorld()) return true;
+	if (GetWorld()->ViewLocationsRenderedLastFrame.Num() == 0) return true;
+	return FVector::Dist(GetWorld()->ViewLocationsRenderedLastFrame[0], Location) < DebugDistance;
+}
+
 FColor ASVONavVolume::GetLayerColour(const int32 LayerIndex) const
 {
 	const float Ratio = LayerColours.Num() / static_cast<float>(NumLayers) * LayerIndex;
@@ -628,13 +630,11 @@ FColor ASVONavVolume::GetLayerColour(const int32 LayerIndex) const
 	const int32 LastIndex = FMath::Min(FMath::CeilToInt(Ratio), LayerColours.Num() - 1);
 	const float Lerp = FMath::Fmod(Ratio, 1);
 	return FColor(
-		FMath::Lerp(LayerColours[FirstIndex].R, LayerColours[LastIndex].R, Lerp),
-		FMath::Lerp(LayerColours[FirstIndex].G, LayerColours[LastIndex].G, Lerp),
-		FMath::Lerp(LayerColours[FirstIndex].B, LayerColours[LastIndex].B, Lerp)
-	);
+        FMath::Lerp(LayerColours[FirstIndex].R, LayerColours[LastIndex].R, Lerp),
+        FMath::Lerp(LayerColours[FirstIndex].G, LayerColours[LastIndex].G, Lerp),
+        FMath::Lerp(LayerColours[FirstIndex].B, LayerColours[LastIndex].B, Lerp)
+    );
 }
-
-#if WITH_EDITOR
 
 void ASVONavVolume::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {

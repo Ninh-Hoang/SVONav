@@ -1,6 +1,6 @@
 ﻿#pragma once
 
-#include "SVONavVolume.h"
+#include "SVONavVolumeBase.h"
 #include "Async/Async.h"
 #include "Async/AsyncWork.h"
 
@@ -10,13 +10,13 @@ friend class FAutoDeleteAsyncTask<FSVONavUpdateOctreeTask>;
 
 public:
 	FSVONavUpdateOctreeTask(
-		ASVONavVolume* Volume,
+		ASVONavVolumeBase* Volume,
 		const FSVONavUpdateOctreeDelegate Complete) :
 		Volume(Volume),
 		TaskComplete(Complete){}
 
 protected:
-	ASVONavVolume* Volume;
+	ASVONavVolumeBase* Volume;
 	FSVONavUpdateOctreeDelegate TaskComplete;
 
 	void DoWork() const {

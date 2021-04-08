@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "SVONavType.h"
 #include "GameFramework/Volume.h"
-#include "SVONavVolume.generated.h"
+#include "SVONavVolumeBase.generated.h"
 
 DECLARE_DELEGATE(FSVONavUpdateOctreeDelegate);
 
@@ -153,9 +153,10 @@ public:
 	const TArray<FSVONavNode>& GetLayer_Hie(uint8 LayerIndex) const { return Octree.Layers[LayerIndex]; };
 	const FSVONavNode& GetNode(const FSVONavLink& Link) const;
 	bool LinkNodeIsValid(const FSVONavLink& Link) const;
-	bool GetNodeLocation_Hie(uint8 LayerIndex, uint_fast64_t MortonCode, FVector& Location) const;
+	bool GetNodeLocation(uint8 LayerIndex, uint_fast64_t MortonCode, FVector& Location) const;
+	bool GetNodeLocation(const FSVONavLink& Link, FVector& Location);
 	void GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
-	int32 GetLayerCount_Hie() const {return Octree.Layers.Num();}
+	int32 GetLayerCount() const {return Octree.Layers.Num();}
 	bool IsWithinBounds(const FVector Location) const { return GetBoundingBox().IsInside(Location); }
 
 	//debug draw
@@ -239,6 +240,8 @@ protected:
 	virtual float GetActualVolumeSize() const { return FMath::Pow(2, VoxelExponent) * (VoxelSize); }
 
 	//debug draw
+	virtual void RegenerateLinkForDebug();
+	bool InDebugRange(FVector Location) const;
 	void DebugDrawVolume() const;
 	void DebugDrawVoxel(FVector Location, FVector Extent, FColor Colour) const;
 	void DebugDrawSphere(const FVector Location, const float Radius, const FColor Colour) const;
