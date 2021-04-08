@@ -11,7 +11,7 @@ DECLARE_DELEGATE(FSVONavUpdateOctreeDelegate);
 * Volume contains the octree and methods required for  navigation
 */
 
-UCLASS(Blueprintable, meta=(DisplayName = "SVO Hierarchical Navigation Volume"))
+UCLASS(Blueprintable, meta=(DisplayName = "SVO Navigation Volume Base"))
 class SVONAV_API ASVONavVolumeBase : public AVolume
 {
 	GENERATED_BODY()
@@ -234,9 +234,10 @@ protected:
 
 	bool IsBlocked(const FVector& Location, float Size) const;
 	bool IsBlocked(const FVector& Location, float Size, TArray<FOverlapResult>& OverlapResults) const;
-	
-	int32 GetLayerNodeCount_Hie(layerindex_t LayerIndex) const;
-	int32 GetSegmentNodeCount_Hie(layerindex_t LayerIndex) const;
+
+	TArray<FSVONavNode>& GetLayer(const layerindex_t LayerIndex) { return Octree.Layers[LayerIndex]; };
+	int32 GetLayerNodeCount(layerindex_t LayerIndex) const;
+	int32 GetSegmentNodeCount(layerindex_t LayerIndex) const;
 	virtual float GetActualVolumeSize() const { return FMath::Pow(2, VoxelExponent) * (VoxelSize); }
 
 	//debug draw

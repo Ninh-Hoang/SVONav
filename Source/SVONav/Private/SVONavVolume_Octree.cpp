@@ -181,6 +181,13 @@ void ASVONavVolume::InitRasterize()
 			BlockedIndices[I + 1].Add(MortonCode >> 3);
 		}
 	}
+
+	for (int32 I = 0; I < BlockedIndices.Num(); I++)
+	{
+		UE_LOG(LogTemp,Warning, TEXT("BlockedIndices: %i"), BlockedIndices[I].Num());
+	}
+	UE_LOG(LogTemp,Warning, TEXT("NodeCount: %i"), GetLayerNodeCount(1));
+	UE_LOG(LogTemp,Warning, TEXT("Voxel HalfSize: %i"), VoxelHalfSizes[1]);
 }
 
 void ASVONavVolume::RasterizeLayer(uint8 LayerIndex)

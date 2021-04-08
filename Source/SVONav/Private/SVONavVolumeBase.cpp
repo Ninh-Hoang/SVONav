@@ -49,7 +49,10 @@ bool ASVONavVolumeBase::BuildOctree()
 
 	// Octree info
 	int32 NumNodes = 0;
-	for (int32 I = 0; I < NumLayers; I++) NumNodes += Octree.Layers[I].Num();
+	if(Octree.Layers.Num() > 0)
+	{
+		for (int32 I = 0; I < Octree.Layers.Num(); I++) NumNodes += Octree.Layers[I].Num();
+	}
 
 	UE_LOG(LogTemp, Display, TEXT("Generation Time : %f seconds"), Duration);
 	UE_LOG(LogTemp, Display, TEXT("Desired Volume Size : %fcm"), VolumeSize);
@@ -209,15 +212,6 @@ void ASVONavVolumeBase::UpdateVolume()
 	Bounds.GetCenterAndExtents(VolumeOrigin, VolumeExtent);
 }
 
-void ASVONavVolumeBase::Serialize(FArchive& Ar)
-{
-	Super::Serialize(Ar);
-	Ar << Octree;
-	Ar << VoxelHalfSizes;
-	Ar << VolumeExtent;
-	NumBytes = Octree.GetSize();
-}
-
 void ASVONavVolumeBase::Initialise()
 {
 	Octree.Reset();
@@ -301,9 +295,7 @@ void ASVONavVolumeBase::RequestOctreeDebugDraw()
 	bDebugDrawRequested = false;
 }
 
-
-
-int32 ASVONavVolumeBase::GetSegmentNodeCount_Hie(layerindex_t LayerIndex) const
+int32 ASVONavVolumeBase::GetSegmentNodeCount(layerindex_t LayerIndex) const
 {
 	return FMath::Pow(2, VoxelExponent - LayerIndex);
 }
@@ -422,7 +414,7 @@ void ASVONavVolumeBase::GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONa
 	}
 }
 
-int32 ASVONavVolumeBase::GetLayerNodeCount_Hie(layerindex_t LayerIndex) const
+int32 ASVONavVolumeBase::GetLayerNodeCount(layerindex_t LayerIndex) const
 {
 	return FMath::Pow(8, VoxelExponent - LayerIndex);
 }
@@ -454,6 +446,15 @@ bool ASVONavVolumeBase::IsBlocked(const FVector& Location, float Size, TArray<FO
 		FCollisionShape::MakeBox(FVector(Size + Clearance)),
 		CollisionQueryParams
 	);
+}
+
+void ASVONavVolumeBase::Serialize(FArchive& Ar)
+{
+	Super::Serialize(Ar);
+	Ar << Octree;
+	Ar << VoxelHalfSizes;
+	Ar << VolumeExtent;
+	NumBytes = Octree.GetSize();
 }
 
 #if WITH_EDITOR
@@ -594,8 +595,7 @@ void ASVONavVolumeBase::DebugDrawOctree()
 			}
 		}
 	}
-
-	UE_LOG(LogTemp, Warning, TEXT("DebugLink Count: %i"), DebugLinks.Num());
+	
 	DebugDrawNeighbourLink();
 
 	//check out of bound voxel
@@ -605,7 +605,7 @@ void ASVONavVolumeBase::DebugDrawOctree()
 		{
 			uint_fast32_t X, Y, Z;
 			morton3D_64_decode(Octree.Layers[R][V].MortonCode, X, Y, Z);
-			int32 C = GetSegmentNodeCount_Hie(R);
+			int32 C = GetSegmentNodeCount(R);
 			FIntVector S(static_cast<int32>(X), static_cast<int32>(Y), static_cast<int32>(Z));
 			if(S.X >= C || S.Y >= C || S.Z >= C)
 			{
