@@ -150,7 +150,6 @@ public:
 	FBox GetBoundingBox() const;
 	bool GetLink(const FVector& Location, FSVONavLink& Link);
 	float GetVoxelScale(uint8 LayerIndex) const;
-	const TArray<FSVONavNode>& GetLayer_Hie(uint8 LayerIndex) const { return Octree.Layers[LayerIndex]; };
 	const FSVONavNode& GetNode(const FSVONavLink& Link) const;
 	bool LinkNodeIsValid(const FSVONavLink& Link) const;
 	bool GetNodeLocation(uint8 LayerIndex, uint_fast64_t MortonCode, FVector& Location) const;
@@ -171,7 +170,6 @@ protected:
 	FSVONavOctree CachedOctree;
 	TArray<float> VoxelHalfSizes;
 	TArray<TSet<uint_fast64_t>> BlockedIndices;
-	int32 NumLayer;
 
 	FVector VolumeOrigin;
 	FVector VolumeExtent;
@@ -230,7 +228,7 @@ protected:
 	virtual void UpdateVolume();
 	virtual void InternalBuildOctree();
 	virtual bool FindLink(layerindex_t LayerIndex, int32 NodeIndex, uint8 Direction, FSVONavLink& Link, const FVector& NodeLocation);
-	virtual bool GetNodeIndex_Hie(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const;
+	virtual bool GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const;
 
 	bool IsBlocked(const FVector& Location, float Size) const;
 	bool IsBlocked(const FVector& Location, float Size, TArray<FOverlapResult>& OverlapResults) const;

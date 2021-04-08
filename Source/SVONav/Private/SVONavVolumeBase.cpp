@@ -1,6 +1,7 @@
 ﻿#include "SVONavVolumeBase.h"
 #include "chrono"
 #include "DrawDebugHelpers.h"
+#include "Components/LineBatchComponent.h"
 #include "SVONavUpdateOctreeTask.h"
 #include "Components/BrushComponent.h"
 #include "Async/ParallelFor.h"
@@ -42,6 +43,11 @@ bool ASVONavVolumeBase::BuildOctree()
 #endif
 
 	InternalBuildOctree();
+
+	// Clean up and cache the octree
+	NumBytes = Octree.GetSize();
+	CollisionQueryParams.ClearIgnoredActors();
+	CachedOctree = Octree;
 	
 #if WITH_EDITOR
 	const float Duration = std::chrono::duration_cast<milliseconds>(high_resolution_clock::now() - StartTime).count() /
@@ -66,7 +72,7 @@ bool ASVONavVolumeBase::BuildOctree()
 
 	DebugDrawOctree();
 #endif
-	for (int32 i = 0; i < NumLayer; i ++)
+	for (int32 i = 0; i < NumLayers; i ++)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Layer %i num: %i"), i, Octree.Layers[i].Num());
 	}
@@ -106,7 +112,7 @@ bool ASVONavVolumeBase::FindLink(layerindex_t LayerIndex, int32 NodeIndex, uint8
 	const uint_fast64_t AdjacentCode = morton3D_64_encode(X, Y, Z);
 
 	int32 NeighbourNodeIndex;
-	if (GetNodeIndex_Hie(LayerIndex, AdjacentCode, NeighbourNodeIndex))
+	if (GetNodeIndex(LayerIndex, AdjacentCode, NeighbourNodeIndex))
 	{
 		Link.SetLayerIndex(LayerIndex);
 		Link.SetNodeIndex(NeighbourNodeIndex);
@@ -195,7 +201,6 @@ void ASVONavVolumeBase::UpdateVolume()
 	VoxelExponent = FMath::RoundToInt(FMath::Log2(VolumeSize / (VoxelSize)));
 
 	NumLayers = VoxelExponent + 1;
-
 	// Build a list of voxel half-scale sizes for each layer
 	VoxelHalfSizes.Reset();
 	VoxelHalfSizes.Reserve(NumLayers);
@@ -251,12 +256,13 @@ bool ASVONavVolumeBase::GetLink(const FVector& Location, FSVONavLink& Link)
 	int32 LayerIndex = Octree.Layers.Num() - 2;
 	while (LayerIndex >= 0)
 	{
-		const TArray<FSVONavNode>& Layer = GetLayer_Hie(LayerIndex);
+		const TArray<FSVONavNode>& Layer = GetLayer(LayerIndex);
 		FIntVector Voxel;
 		GetMortonVoxel(Location, LayerIndex, Voxel);
 		const uint_fast64_t MortonCode = morton3D_64_encode(Voxel.X, Voxel.Y, Voxel.Z);
+		
 		int32 NodeIndex;
-		if (GetNodeIndex_Hie(LayerIndex, MortonCode, NodeIndex))
+		if (GetNodeIndex(LayerIndex, MortonCode, NodeIndex))
 		{
 			const FSVONavNode Node = Layer[NodeIndex];
 
@@ -300,7 +306,7 @@ int32 ASVONavVolumeBase::GetSegmentNodeCount(layerindex_t LayerIndex) const
 	return FMath::Pow(2, VoxelExponent - LayerIndex);
 }
 
-bool ASVONavVolumeBase::GetNodeIndex_Hie(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const
+bool ASVONavVolumeBase::GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const
 {
 	const auto& OctreeLayer = Octree.Layers[LayerIndex];
 	int32 Start = 0;
@@ -523,7 +529,7 @@ void ASVONavVolumeBase::EditorApplyScale(const FVector& DeltaScale, const FVecto
 
 FColor ASVONavVolumeBase::GetLayerColour(const int32 LayerIndex) const
 {
-	const float Ratio = LayerColours.Num() / static_cast<float>(NumLayer) * LayerIndex;
+	const float Ratio = LayerColours.Num() / static_cast<float>(NumLayers) * LayerIndex;
 	const int32 FirstIndex = FMath::FloorToInt(Ratio);
 	const int32 LastIndex = FMath::Min(FMath::CeilToInt(Ratio), LayerColours.Num() - 1);
 	const float Lerp = FMath::Fmod(Ratio, 1);
@@ -541,10 +547,13 @@ void ASVONavVolumeBase::RegenerateLinkForDebug()
 
 void ASVONavVolumeBase::DebugDrawOctree()
 {
+	GetWorld()->PersistentLineBatcher->SetComponentTickEnabled(false);
+	FlushDebugDraw();
 	DebugLinks.Empty();
+	
 	if (bDisplayLayers)
 	{
-		for (int32 a = 0; a < NumLayer; a++)
+		for (int32 a = 0; a < NumLayers; a++)
 		{
 			for (int32 i = 0; i < Octree.Layers[a].Num(); i ++)
 			{

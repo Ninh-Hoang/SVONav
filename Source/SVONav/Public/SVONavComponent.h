@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "SVONavType.h"
+#include "SVONavVolumeBase.h"
 #include "Components/ActorComponent.h"
 #include "SVONavComponent.generated.h"
 
@@ -90,6 +91,9 @@ public:
 
 	UPROPERTY()
 	ASVONavVolume* Volume;
+
+	UPROPERTY()
+	ASVONavVolumeBase* HieVolume;
 	
 protected:
 	// Called when the game starts
@@ -99,4 +103,5 @@ public:
 	bool VolumeContainsOctree() const;
 	bool VolumeContainsOwner() const;
 	bool FindVolume();
+	bool FindHierarchicalVolume();
 };

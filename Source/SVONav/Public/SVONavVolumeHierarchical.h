@@ -20,9 +20,11 @@ public:
 	TArray<int32> GetArrayNodeIndexExtra(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode);
 	
 protected:
+	virtual void Initialise() override;
 	virtual void InternalBuildOctree() override;
 	virtual void RegenerateLinkForDebug() override;
-
+	virtual void Serialize(FArchive& Ar) override;
+	virtual bool GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const override;
 private:
 	TArray<int32> HierarchyStartIndex;
 	virtual void InitRasterize();

@@ -11,22 +11,38 @@ ASVONavVolumeHierarchical::ASVONavVolumeHierarchical(const FObjectInitializer& O
 void ASVONavVolumeHierarchical::InternalBuildOctree()
 {
 	InitRasterize();
+	
+	Octree.Leaves.AddDefaulted(BlockedIndices[0].Num() * 8 * 0.25f);
+	
 	RasterizeLayer0();
 	RasterizeLayer1();
-	for (int32 i = 2; i < NumLayer; i++)
+
+	for (int32 i = 2; i < NumLayers; i++)
 	{
 	    RasterizeSparseLayer(i);
 	}
-	for (int32 i = 0; i < NumLayer; i ++)
+	for (int32 i = 0; i < NumLayers; i ++)
 	{
 	    HierarchyStartIndex.Add(Octree.Layers[i].Num() - 1);
 	}
 	BuildLayer0Link(0);
-	for (int32 i = 1; i < NumLayer; i++)
+	for (int32 i = 1; i < NumLayers; i++)
 	{
 	    BuildHierarchyNodes(i);
 	    BuildLayerLink(i);
 	}
+}
+
+void ASVONavVolumeHierarchical::Initialise()
+{
+	Super::Initialise();
+	HierarchyStartIndex.Empty();
+}
+
+void ASVONavVolumeHierarchical::Serialize(FArchive& Ar)
+{
+	Super::Serialize(Ar);
+	Ar << HierarchyStartIndex;
 }
 
 void ASVONavVolumeHierarchical::InitRasterize()
@@ -51,13 +67,6 @@ void ASVONavVolumeHierarchical::InitRasterize()
 			BlockedIndices[I + 1].Add(MortonCode >> 3);
 		}
 	}
-	
-	for (int32 I = 0; I < BlockedIndices.Num(); I++)
-	{
-		UE_LOG(LogTemp,Warning, TEXT("BlockedIndices: %i"), BlockedIndices[I].Num());
-	}
-	UE_LOG(LogTemp,Warning, TEXT("NodeCount: %i"), GetLayerNodeCount(3));
-	UE_LOG(LogTemp,Warning, TEXT("Voxel HalfSize: %i"), VoxelHalfSizes[1]);
 }
 
 void ASVONavVolumeHierarchical::RasterizeLayer0()
@@ -111,8 +120,6 @@ void ASVONavVolumeHierarchical::RasterizeLayer0()
 		}
 	}
 }
-
-
 
 void ASVONavVolumeHierarchical::RasterizeLayer1()
 {
@@ -179,8 +186,6 @@ void ASVONavVolumeHierarchical::BuildLayer0Link(layerindex_t LayerIndex)
 		}
 	}
 }
-
-
 
 void ASVONavVolumeHierarchical::BuildHierarchyNodes(layerindex_t Layer)
  {
@@ -268,7 +273,7 @@ void ASVONavVolumeHierarchical::BuildHierarchyNodes(layerindex_t Layer)
  				int32 ParentIndex = 0;
  				if (J == 0)
  				{
- 					if(!GetNodeIndex_Hie(Layer, ParentCode, ParentIndex))
+ 					if(!GetNodeIndex(Layer, ParentCode, ParentIndex))
  					{
  						ParentIndex = Octree.Layers[Layer].Emplace();
  					}
@@ -332,7 +337,7 @@ void ASVONavVolumeHierarchical::BuildLayerLink(layerindex_t LayerIndex)
 					{
 						const FSVONavNode& ChildNeighbourNode = GetNode(ChildNeighbourLink);
 						FSVONavLink InitLink;
-						if (ChildNeighbourLink.GetLayerIndex() >= LayerIndex && ChildNeighbourLink.GetLayerIndex() < NumLayer -1)
+						if (ChildNeighbourLink.GetLayerIndex() >= LayerIndex && ChildNeighbourLink.GetLayerIndex() < NumLayers -1)
 						{
 							InitLink.SetNodeIndex(ChildNeighbourLink.GetNodeIndex());
 							InitLink.SetLayerIndex(ChildNeighbourLink.GetLayerIndex());
@@ -427,6 +432,29 @@ TArray<int32> ASVONavVolumeHierarchical::GetArrayNodeIndex(layerindex_t LayerInd
 	return NodeSearchResults;
 }
 
+bool ASVONavVolumeHierarchical::GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode,
+	int32& NodeIndex) const
+{
+	const auto& OctreeLayer = Octree.Layers[LayerIndex];
+	int32 Start = 0;
+	int32 End = HierarchyStartIndex.Num() == 0 ? OctreeLayer.Num() - 1 : HierarchyStartIndex[LayerIndex];
+	int32 Mean = (Start + End) * 0.5f;
+
+	// Binary search by Morton code
+	while (Start <= End)
+	{
+		if (OctreeLayer[Mean].MortonCode < NodeMortonCode) Start = Mean + 1;
+		else if (OctreeLayer[Mean].MortonCode == NodeMortonCode)
+		{
+			NodeIndex = Mean;
+			return true;
+		}
+		else End = Mean - 1;
+		Mean = (Start + End) * 0.5f;
+	}
+	return false;
+}
+
 TArray<int32> ASVONavVolumeHierarchical::GetArrayNodeIndexExtra(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode)
 {
 	TArray<int32> NodeSearchResults;
@@ -507,7 +535,7 @@ bool ASVONavVolumeHierarchical::FindLinkViaCodeChildlessNode(layerindex_t LayerI
 	const uint_fast64_t AdjacentCode = morton3D_64_encode(X, Y, Z);
 
 	int32 NeighbourNodeIndex;
-	if (GetNodeIndex_Hie(LayerIndex, AdjacentCode, NeighbourNodeIndex))
+	if (GetNodeIndex(LayerIndex, AdjacentCode, NeighbourNodeIndex))
 	{
 		FVector Location;
 		GetNodeLocation(LayerIndex, morton3D_64_encode(X, Y, Z), Location);
@@ -567,7 +595,7 @@ bool ASVONavVolumeHierarchical::FindLinkViaCode(layerindex_t LayerIndex, mortonc
 	const uint_fast64_t AdjacentCode = morton3D_64_encode(X, Y, Z);
 
 	int32 NeighbourNodeIndex;
-	if (GetNodeIndex_Hie(LayerIndex, AdjacentCode, NeighbourNodeIndex))
+	if (GetNodeIndex(LayerIndex, AdjacentCode, NeighbourNodeIndex))
 	{
 		if (LayerIndex != 0)
 		{
@@ -608,7 +636,7 @@ bool ASVONavVolumeHierarchical::FindLinkViaCode(layerindex_t LayerIndex, mortonc
 
 void ASVONavVolumeHierarchical::RegenerateLinkForDebug()
 {
-	for (int32 i = 1; i < NumLayer; i++)
+	for (int32 i = 1; i < NumLayers; i++)
 	{
 		BuildLayerLink(i);
 	}

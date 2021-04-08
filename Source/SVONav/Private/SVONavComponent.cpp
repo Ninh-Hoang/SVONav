@@ -378,7 +378,12 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 		return false;
 	}*/
 
-	if (!Volume->GetLink_Hie(StartLocation, StartLink))
+	if(!HieVolume)
+	{
+		if(!FindHierarchicalVolume()) return false;
+	}
+
+	if (!HieVolume->GetLink(StartLocation, StartLink))
 	{
 
 #if WITH_EDITOR
@@ -402,7 +407,7 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 #endif
 	}
 
-	if (!Volume->GetLink_Hie(TargetLocation, TargetLink))
+	if (!HieVolume->GetLink(TargetLocation, TargetLink))
 	{
 #if WITH_EDITOR
 		if (bDebugLogPathfinding) UE_LOG(LogTemp, Warning, TEXT("%s: Failed to find target Link. Searching nearby..."),
@@ -421,10 +426,10 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 	}
 
 	FSVONavNode StartNode;
-	StartNode = Volume->GetNode_Hie(StartLink);
+	StartNode = HieVolume->GetNode(StartLink);
 	
 	FSVONavNode TargetNode;
-	TargetNode = Volume->GetNode_Hie(TargetLink);
+	TargetNode = HieVolume->GetNode(TargetLink);
 	
 	int32 StartParentLayer = StartNode.Parent.GetLayerIndex();
 	int32 TargetParentLayer = TargetNode.Parent.GetLayerIndex();
@@ -432,20 +437,20 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 	int32 StartParentIndex = StartNode.Parent.GetNodeIndex();
 	int32 TargetParentIndex = TargetNode.Parent.GetNodeIndex();
 
-	int32 LayerNum = Volume->GetLayerCount_Hie();
+	int32 LayerNum = HieVolume->GetLayerCount();
 
-	/*while(StartParentLayer != TargetParentLayer)
+	while(StartParentLayer != TargetParentLayer)
 	{
 		if(StartParentLayer < TargetParentLayer)
 		{			
-			StartNode = Volume->GetNode_Hie(StartNode.Parent);
+			StartNode = HieVolume->GetNode(StartNode.Parent);
 			StartParentIndex = StartNode.Parent.GetNodeIndex();
 			StartParentLayer = StartNode.Parent.GetLayerIndex();
 
 		}
 		else if (StartParentLayer > TargetParentLayer)
 		{
-			TargetNode = Volume->GetNode_Hie(TargetNode.Parent);
+			TargetNode = HieVolume->GetNode(TargetNode.Parent);
 			TargetParentIndex = TargetNode.Parent.GetNodeIndex();
 			TargetParentLayer = TargetNode.Parent.GetLayerIndex();
 		}
@@ -468,10 +473,10 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 	
 	while (StartParentIndex  != TargetParentIndex && StartParentLayer != 15 && TargetParentLayer != 15)
 	{
-		StartNode = Volume->GetNode_Hie(StartNode.Parent);
+		StartNode = HieVolume->GetNode(StartNode.Parent);
 		StartParentIndex = StartNode.Parent.GetNodeIndex();
 		StartParentLayer = StartNode.Parent.GetLayerIndex();
-		TargetNode = Volume->GetNode_Hie(TargetNode.Parent);
+		TargetNode = HieVolume->GetNode(TargetNode.Parent);
 		TargetParentIndex = TargetNode.Parent.GetNodeIndex();
 		TargetParentLayer = TargetNode.Parent.GetLayerIndex();
 		if(StartParentIndex  == TargetParentIndex && StartParentLayer != 15 && TargetParentLayer != 15)
@@ -480,7 +485,7 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 			UE_LOG(LogTemp, Warning, TEXT("Target Layer %i, Target Index %i"), TargetParentLayer, TargetParentIndex );
 			return true;
 		}
-	}*/
+	}
 	/*for(int i = 0; i < Volume->NumLayers; i++)
 	{
 		if(TargetNode == StartNode)
@@ -536,6 +541,26 @@ bool USVONavComponent::FindVolume()
 			if (CurrentVolume->IsWithinBounds(GetOwner()->GetActorLocation()))
 			{
 				Volume = CurrentVolume;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool USVONavComponent::FindHierarchicalVolume()
+{
+	TArray<AActor*> Volumes;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASVONavVolumeBase::StaticClass(), Volumes);
+
+	for (auto& NavVolume : Volumes)
+	{
+		ASVONavVolumeBase* CurrentVolume = Cast<ASVONavVolumeBase>(NavVolume);
+		if (CurrentVolume)
+		{
+			if (CurrentVolume->IsWithinBounds(GetOwner()->GetActorLocation()))
+			{
+				HieVolume = CurrentVolume;
 				return true;
 			}
 		}
