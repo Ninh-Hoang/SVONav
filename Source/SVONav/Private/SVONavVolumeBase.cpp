@@ -553,7 +553,7 @@ void ASVONavVolumeBase::DebugDrawOctree()
 	
 	if (bDisplayLayers)
 	{
-		for (int32 a = 0; a < NumLayers; a++)
+		for (int32 a = 0; a < Octree.Layers.Num(); a++)
 		{
 			for (int32 i = 0; i < Octree.Layers[a].Num(); i ++)
 			{
