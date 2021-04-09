@@ -45,7 +45,7 @@ void USVONavComponent::FindPathAsync(const FVector& StartLocation, const FVector
                                      /*const FFindPathTaskCompleteDynamicDelegate OnComplete,*/
                                      ESVONavPathFindingCallResult& Result)
 {
-FSVONavLink StartLink;
+	FSVONavLink StartLink;
 	FSVONavLink TargetLink;
 	FVector LegalStart = StartLocation;
 	FVector LegalTarget = TargetLocation;
@@ -289,6 +289,16 @@ bool USVONavComponent::FindPathImmediate(const FVector& StartLocation, const FVe
 		                                 *GetOwner()->GetName());
 #endif
 	}
+	else
+	{
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Display,
+		                                 TEXT(
+			                                 "%s: Found Start Link- Layer: %i, Index: %i"
+		                                 ), *GetOwner()->GetName(), StartLink.GetLayerIndex(),
+		                                 StartLink.GetNodeIndex());
+#endif
+	}
 
 	if (!Volume->GetLink(TargetLocation, TargetLink))
 	{
@@ -314,11 +324,21 @@ bool USVONavComponent::FindPathImmediate(const FVector& StartLocation, const FVe
 		                                 *GetOwner()->GetName());
 #endif
 	}
+	else
+	{
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Display,
+		                                 TEXT(
+			                                 "%s: Found Target Link- Layer: %i, Index: %i"
+		                                 ), *GetOwner()->GetName(), TargetLink.GetLayerIndex(),
+		                                 TargetLink.GetNodeIndex());
+#endif
+	}
 
 	FSVONavPath* Path = NavPath->Get();
 
 	Path->Empty();
-	
+
 	FSVONavPathFindingConfig Config;
 	Config.Algorithm = Algorithm;
 	Config.Heuristic = Heuristic;
@@ -332,13 +352,13 @@ bool USVONavComponent::FindPathImmediate(const FVector& StartLocation, const FVe
 	SVONavPathFinder PathFinder(GetWorld(), this, *Volume, Config);
 
 	int PathResult = PathFinder.FindPath(StartLink, TargetLink, LegalStart, LegalTarget, Config, NavPath);
-	
+
 	Result = ESVONavPathFindingCallResult::Success;
 
 #if WITH_EDITOR
 	if (bDebugLogPathfinding) UE_LOG(LogTemp, Display, TEXT("%s: Find path task called successfully"),
 	                                 *GetOwner()->GetName());
-	if(bDebugDrawEnabled) PathFinder.DrawDebug(GetWorld(), *Volume, NavPath);
+	if (bDebugDrawEnabled) PathFinder.DrawDebug(GetWorld(), *Volume, NavPath);
 #endif
 
 	return true;
@@ -350,7 +370,7 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 	FSVONavLink TargetLink;
 	FVector LegalStart = StartLocation;
 	FVector LegalTarget = TargetLocation;
-	
+
 	// Error checking before task start
 	/*if (!VolumeContainsOctree() || !VolumeContainsOwner()) FindVolume();
 	if (!VolumeContainsOwner())
@@ -378,17 +398,16 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 		return false;
 	}*/
 
-	if(!HieVolume)
+	if (!HieVolume)
 	{
-		if(!FindHierarchicalVolume()) return false;
+		if (!FindHierarchicalVolume()) return false;
 	}
 
 	if (!HieVolume->GetLink(StartLocation, StartLink))
 	{
-
 #if WITH_EDITOR
 		if (bDebugLogPathfinding) UE_LOG(LogTemp, Warning, TEXT("%s: Failed to find start Link. Searching nearby..."),
-                                         *GetOwner()->GetName());
+		                                 *GetOwner()->GetName());
 #endif
 		return false;
 		/*if (!Volume->FindAccessibleLink(LegalStart, StartLink))
@@ -403,15 +422,26 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 
 #if WITH_EDITOR
 		if (bDebugLogPathfinding) UE_LOG(LogTemp, Display, TEXT("%s: Found legal start location"),
-                                         *GetOwner()->GetName());
+		                                 *GetOwner()->GetName());
 #endif
 	}
+	else
+	{
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Display,
+                                         TEXT(
+                                             "%s: Found Start Link- Layer: %i, Index: %i"
+                                         ), *GetOwner()->GetName(), StartLink.GetLayerIndex(),
+                                         StartLink.GetNodeIndex());
+#endif
+	}
+	
 
 	if (!HieVolume->GetLink(TargetLocation, TargetLink))
 	{
 #if WITH_EDITOR
 		if (bDebugLogPathfinding) UE_LOG(LogTemp, Warning, TEXT("%s: Failed to find target Link. Searching nearby..."),
-                                         *GetOwner()->GetName());
+		                                 *GetOwner()->GetName());
 #endif
 		return false;
 		/*if (!Volume->FindAccessibleLink(LegalTarget, TargetLink))
@@ -424,13 +454,23 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 			return false;
 		}*/
 	}
+	else
+	{
+#if WITH_EDITOR
+		if (bDebugLogPathfinding) UE_LOG(LogTemp, Display,
+		                                 TEXT(
+			                                 "%s: Found Target Link- Layer: %i, Index: %i"
+		                                 ), *GetOwner()->GetName(), TargetLink.GetLayerIndex(),
+		                                 TargetLink.GetNodeIndex());
+#endif
+	}
 
 	FSVONavNode StartNode;
 	StartNode = HieVolume->GetNode(StartLink);
-	
+
 	FSVONavNode TargetNode;
 	TargetNode = HieVolume->GetNode(TargetLink);
-	
+
 	int32 StartParentLayer = StartNode.Parent.GetLayerIndex();
 	int32 TargetParentLayer = TargetNode.Parent.GetLayerIndex();
 
@@ -439,14 +479,13 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 
 	int32 LayerNum = HieVolume->GetLayerCount();
 
-	while(StartParentLayer != TargetParentLayer)
+	while (StartParentLayer != TargetParentLayer)
 	{
-		if(StartParentLayer < TargetParentLayer)
-		{			
+		if (StartParentLayer < TargetParentLayer)
+		{
 			StartNode = HieVolume->GetNode(StartNode.Parent);
 			StartParentIndex = StartNode.Parent.GetNodeIndex();
 			StartParentLayer = StartNode.Parent.GetLayerIndex();
-
 		}
 		else if (StartParentLayer > TargetParentLayer)
 		{
@@ -454,24 +493,23 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 			TargetParentIndex = TargetNode.Parent.GetNodeIndex();
 			TargetParentLayer = TargetNode.Parent.GetLayerIndex();
 		}
-		if(StartParentIndex == TargetParentIndex && StartParentLayer == TargetParentLayer)
+		if (StartParentIndex == TargetParentIndex && StartParentLayer == TargetParentLayer)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Start Layer %i, Start Index %i"), StartParentLayer, StartParentIndex);
-			UE_LOG(LogTemp, Warning, TEXT("Target Layer %i, Target Index %i"), TargetParentLayer, TargetParentIndex );
+			UE_LOG(LogTemp, Warning, TEXT("Target Layer %i, Target Index %i"), TargetParentLayer, TargetParentIndex);
 			return true;
 		}
-		
 	}
 
-	if(StartParentIndex  == TargetParentIndex)
+	if (StartParentIndex == TargetParentIndex)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Start Layer %i, Start Index %i"), StartParentLayer, StartParentIndex);
-		UE_LOG(LogTemp, Warning, TEXT("Target Layer %i, Target Index %i"), TargetParentLayer, TargetParentIndex );
+		UE_LOG(LogTemp, Warning, TEXT("Target Layer %i, Target Index %i"), TargetParentLayer, TargetParentIndex);
 		return true;
 	}
 
-	
-	while (StartParentIndex  != TargetParentIndex && StartParentLayer != 15 && TargetParentLayer != 15)
+
+	while (StartParentIndex != TargetParentIndex && StartParentLayer != 15 && TargetParentLayer != 15)
 	{
 		StartNode = HieVolume->GetNode(StartNode.Parent);
 		StartParentIndex = StartNode.Parent.GetNodeIndex();
@@ -479,10 +517,10 @@ bool USVONavComponent::DoesPathExist(const FVector& StartLocation, const FVector
 		TargetNode = HieVolume->GetNode(TargetNode.Parent);
 		TargetParentIndex = TargetNode.Parent.GetNodeIndex();
 		TargetParentLayer = TargetNode.Parent.GetLayerIndex();
-		if(StartParentIndex  == TargetParentIndex && StartParentLayer != 15 && TargetParentLayer != 15)
+		if (StartParentIndex == TargetParentIndex && StartParentLayer != 15 && TargetParentLayer != 15)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("Start Layer %i, Start Index %i"), StartParentLayer, StartParentIndex);
-			UE_LOG(LogTemp, Warning, TEXT("Target Layer %i, Target Index %i"), TargetParentLayer, TargetParentIndex );
+			UE_LOG(LogTemp, Warning, TEXT("Target Layer %i, Target Index %i"), TargetParentLayer, TargetParentIndex);
 			return true;
 		}
 	}

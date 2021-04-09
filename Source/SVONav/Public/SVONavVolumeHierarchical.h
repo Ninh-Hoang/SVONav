@@ -15,6 +15,7 @@ class SVONAV_API ASVONavVolumeHierarchical : public ASVONavVolumeBase
 	GENERATED_BODY()
 
 public:
+	
 	ASVONavVolumeHierarchical(const FObjectInitializer& ObjectInitializer);
 	TArray<int32> GetArrayNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode);
 	TArray<int32> GetArrayNodeIndexExtra(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode);
@@ -25,8 +26,11 @@ protected:
 	virtual void RegenerateLinkForDebug() override;
 	virtual void Serialize(FArchive& Ar) override;
 	virtual bool GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const override;
+	
 private:
 	TArray<int32> HierarchyStartIndex;
+	TArray<TMap<mortoncode_t, TArray<int32>>> DuplicatedMortonMatrix;
+	
 	virtual void InitRasterize();
 	void RasterizeLayer0();
 	void RasterizeLayer1();

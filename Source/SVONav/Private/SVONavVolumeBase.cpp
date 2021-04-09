@@ -44,14 +44,14 @@ bool ASVONavVolumeBase::BuildOctree()
 
 	InternalBuildOctree();
 
+#if WITH_EDITOR
+	const float Duration = std::chrono::duration_cast<milliseconds>(high_resolution_clock::now() - StartTime).count() /
+        1000.0f;
+	
 	// Clean up and cache the octree
 	NumBytes = Octree.GetSize();
 	CollisionQueryParams.ClearIgnoredActors();
 	CachedOctree = Octree;
-	
-#if WITH_EDITOR
-	const float Duration = std::chrono::duration_cast<milliseconds>(high_resolution_clock::now() - StartTime).count() /
-        1000.0f;
 
 	// Octree info
 	int32 NumNodes = 0;
@@ -217,6 +217,39 @@ void ASVONavVolumeBase::UpdateVolume()
 	Bounds.GetCenterAndExtents(VolumeOrigin, VolumeExtent);
 }
 
+bool ASVONavVolumeBase::FindAccessibleLink(FVector& Location, FSVONavLink& Link)
+{
+	for (int32 I = 1; I < 4; I++)
+	{
+		for (int32 J = 0; J < 6; J++)
+		{
+			FVector OffsetLocation = Location + FVector(Directions[J] * Clearance * I);
+			if (GetLink(OffsetLocation, Link))
+			{
+				Location = OffsetLocation;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool ASVONavVolumeBase::GetLinkLocation(const FSVONavLink& Link, FVector& Location) const
+{
+	const FSVONavNode& Node = Octree.Layers[Link.GetLayerIndex()][Link.GetNodeIndex()];
+	GetNodeLocation(Link.GetLayerIndex(), Node.MortonCode, Location);
+	if (Link.GetLayerIndex() == 0 && Node.FirstChild.IsValid())
+	{
+		uint_fast32_t X, Y, Z;
+		morton3D_64_decode(Link.GetSubNodeIndex(), X, Y, Z);
+		const float Scale = VoxelHalfSizes[0] * 2;
+		Location += FVector(X * Scale * 0.25f, Y * Scale * 0.25f, Z * Scale * 0.25f) - FVector(Scale * 0.375);
+		const FSVONavLeafNode& Leaf = Octree.Leaves[Node.FirstChild.NodeIndex];
+		return !Leaf.GetSubNode(Link.GetSubNodeIndex());
+	}
+	return true;
+}
+
 void ASVONavVolumeBase::Initialise()
 {
 	Octree.Reset();
@@ -260,7 +293,10 @@ bool ASVONavVolumeBase::GetLink(const FVector& Location, FSVONavLink& Link)
 		FIntVector Voxel;
 		GetMortonVoxel(Location, LayerIndex, Voxel);
 		const uint_fast64_t MortonCode = morton3D_64_encode(Voxel.X, Voxel.Y, Voxel.Z);
-		
+
+		FVector Location;
+		GetNodeLocation(LayerIndex, MortonCode, Location);
+		DebugDrawVoxel(Location, FVector(VoxelHalfSizes[LayerIndex]), GetLayerColour(LayerIndex));
 		int32 NodeIndex;
 		if (GetNodeIndex(LayerIndex, MortonCode, NodeIndex))
 		{
@@ -328,6 +364,68 @@ bool ASVONavVolumeBase::GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t Node
 	return false;
 }
 
+void ASVONavVolumeBase::GetNeighbourLeaves(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const
+{
+	const uint_fast64_t LeafIndex = Link.SubNodeIndex;
+	if (LinkNodeIsValid(Link))
+	{
+		const FSVONavNode& Node = GetNode(Link);
+		if (static_cast<int32>(Node.FirstChild.NodeIndex) >= Octree.Leaves.Num()) return;
+		const FSVONavLeafNode& FirstLeaf = Octree.Leaves[Node.FirstChild.NodeIndex];
+
+		uint_fast32_t X = 0, Y = 0, Z = 0;
+		morton3D_64_decode(LeafIndex, X, Y, Z);
+		for (int32 I = 0; I < 6; I++)
+		{
+			int32 SignedX = X + Directions[I].X;
+			int32 SignedY = Y + Directions[I].Y;
+			int32 SignedZ = Z + Directions[I].Z;
+			if (SignedX >= 0 && SignedX < 4
+                && SignedY >= 0 && SignedY < 4
+                && SignedZ >= 0 && SignedZ < 4)
+			{
+				uint_fast64_t Index = morton3D_64_encode(SignedX, SignedY, SignedZ);
+
+				if (FirstLeaf.GetSubNode(Index)) continue;
+				NeighbourLinks.Emplace(0, Link.NodeIndex, Index);
+				continue;
+			}
+			const FSVONavLink& AdjacentLink = Node.Neighbours[I];
+
+			if (LinkNodeIsValid(AdjacentLink))
+			{
+				const FSVONavNode& AdjacentNode = GetNode(AdjacentLink);
+				if (!AdjacentNode.FirstChild.IsValid())
+				{
+					NeighbourLinks.Add(AdjacentLink);
+					continue;
+				}
+
+				const FSVONavLeafNode& Leaf = Octree.Leaves[AdjacentNode.FirstChild.NodeIndex];
+
+				if (!Leaf.IsOccluded())
+				{
+					if (SignedX < 0) SignedX = 3;
+					else if (SignedX > 3) SignedX = 0;
+					else if (SignedY < 0) SignedY = 3;
+					else if (SignedY > 3) SignedY = 0;
+					else if (SignedZ < 0) SignedZ = 3;
+					else if (SignedZ > 3) SignedZ = 0;
+					const uint_fast64_t SubCode = morton3D_64_encode(SignedX, SignedY, SignedZ);
+					if (!Leaf.GetSubNode(SubCode))
+						NeighbourLinks.
+                            Emplace(0, AdjacentNode.FirstChild.NodeIndex, SubCode);
+				}
+			}
+		}
+	}
+}
+
+const FSVONavLeafNode& ASVONavVolumeBase::GetLeafNode(nodeindex_t aIndex) const
+{
+	return Octree.Leaves[aIndex];
+}
+
 bool ASVONavVolumeBase::GetNodeLocation(const FSVONavLink& Link, FVector& Location)
 {
 	const FSVONavNode& Node = Octree.Layers[Link.LayerIndex][Link.NodeIndex];
@@ -368,7 +466,7 @@ void ASVONavVolumeBase::GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONa
 {
 	if (!LinkNodeIsValid(Link)) return;
 	const FSVONavNode& Node = GetNode(Link);
-	for (int32 I = 0; I < 6; I++)
+	for (int32 I = 0; I < 12; I++)
 	{
 		const FSVONavLink& AdjacentLink = Node.Neighbours[I];
 		if (!AdjacentLink.IsValid()) continue;
@@ -423,6 +521,23 @@ void ASVONavVolumeBase::GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONa
 int32 ASVONavVolumeBase::GetLayerNodeCount(layerindex_t LayerIndex) const
 {
 	return FMath::Pow(8, VoxelExponent - LayerIndex);
+}
+
+bool ASVONavVolumeBase::IsAnyMemberBlocked(layerindex_t LayerIndex, mortoncode_t Code) const
+{
+	const mortoncode_t parentCode = Code >> 3;
+
+	if (LayerIndex == BlockedIndices.Num())
+	{
+		return true;
+	}
+	// The parent of this code is blocked
+	if (BlockedIndices[LayerIndex].Contains(parentCode))
+	{
+		return true;
+	}
+
+	return false;
 }
 
 const FSVONavNode& ASVONavVolumeBase::GetNode(const FSVONavLink& Link) const
@@ -551,7 +666,7 @@ void ASVONavVolumeBase::DebugDrawOctree()
 	FlushDebugDraw();
 	DebugLinks.Empty();
 	
-	if (bDisplayLayers)
+	if (OctreeValid())
 	{
 		for (int32 a = 0; a < Octree.Layers.Num(); a++)
 		{
@@ -560,7 +675,13 @@ void ASVONavVolumeBase::DebugDrawOctree()
 				FSVONavNode& Node = Octree.Layers[a][i];
 				FVector NodeLocation;
 				GetNodeLocation(a, Node.MortonCode, NodeLocation);
-				DebugDrawVoxel(NodeLocation, FVector(VoxelHalfSizes[a]), GetLayerColour(a));
+				if (a == 0 && bDisplayLeaves || a > 0 && bDisplayLayers) {
+					DebugDrawVoxel(NodeLocation, FVector(VoxelHalfSizes[a]), GetLayerColour(a));
+				}
+
+				if (bDisplayMortonCodes) {
+					DebugDrawMortonCode(NodeLocation, FString::FromInt(a) + ":" + FString::FromInt(Octree.Layers[a][i].MortonCode), MortonCodeColour);
+				}
 			}
 		}
 	}
@@ -568,6 +689,9 @@ void ASVONavVolumeBase::DebugDrawOctree()
 	{
 		RegenerateLinkForDebug();
 	}
+
+	if (bDisplayLeafOcclusion) DebugDrawLeafOcclusion();
+	
 	for(auto& DebugVoxel : DebugVoxelList)
 	{
 		if(DebugVoxel.Layer >=  Octree.Layers.Num()) continue;
@@ -593,7 +717,7 @@ void ASVONavVolumeBase::DebugDrawOctree()
 				UE_LOG(LogTemp, Warning, TEXT("Neighbour Layer: %i, Neighbour Index: %i"), Link.GetLayerIndex(), Link.GetNodeIndex());
 			}
 		}
-		for(auto& Link : Node.Childs)
+		for(auto& Link : Node.Children)
 		{
 			if(Link.IsValid())
 			{

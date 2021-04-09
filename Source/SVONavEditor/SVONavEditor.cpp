@@ -1,5 +1,4 @@
 #include "SVONavEditor/SVONavEditor.h"
-#include "SVONavVolumeProperties.h"
 #include "SVONavVolumeBaseProperties.h"
 #include "PropertyEditor/Public/PropertyEditorModule.h"
 
@@ -11,7 +10,6 @@ void FSVONavEditorModule::StartupModule()
 {
 	UE_LOG(LogSVONavEditor, Warning, TEXT("SVONavEditor: Module Startup"));
 	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
-	PropertyModule.RegisterCustomClassLayout("SVONavVolume", FOnGetDetailCustomizationInstance::CreateStatic(&FSVONavVolumeProperties::MakeInstance));
 	PropertyModule.RegisterCustomClassLayout("SVONavVolumeBase", FOnGetDetailCustomizationInstance::CreateStatic(&FSVONavVolumeBaseProperties::MakeInstance));
 }
 

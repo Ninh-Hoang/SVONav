@@ -7,6 +7,49 @@
 
 #include "SVONavType.generated.h"
 //OCTREE
+struct SVONAV_API FSVOHieLink
+{
+	unsigned int LayerIndex:4;
+	unsigned int NodeIndex:22;
+
+	FSVOHieLink() :
+        LayerIndex(15),
+        NodeIndex(0)
+	{
+	}
+
+	FSVOHieLink(const uint8 LayerIndex, const uint_fast32_t NodeIndex, const uint8 SubNodeIndex) :
+        LayerIndex(LayerIndex),
+        NodeIndex(NodeIndex)
+	{
+	}
+
+	uint8 GetLayerIndex() const { return LayerIndex; }
+	void SetLayerIndex(const uint8 NewLayerIndex) { LayerIndex = NewLayerIndex; }
+
+	uint_fast32_t GetNodeIndex() const { return NodeIndex; }
+	void SetNodeIndex(const uint_fast32_t NewNodeIndex) { NodeIndex = NewNodeIndex; }
+
+	bool IsValid() const { return LayerIndex != 15; }
+	void Invalidate() { LayerIndex = 15; }
+
+	bool operator==(const FSVOHieLink& OtherLink) const
+	{
+		return memcmp(this, &OtherLink, sizeof(FSVOHieLink)) == 0;
+	}
+
+	bool operator!=(const FSVOHieLink& OtherLink) const { return !(*this == OtherLink); }
+	static FSVOHieLink GetInvalidLink() { return FSVOHieLink(15, 0, 0); }
+	FString ToString() const { return FString::Printf(TEXT("%i:%i"), LayerIndex, NodeIndex); }
+};
+
+FORCEINLINE uint32 GetTypeHash(const FSVOHieLink& Link) { return *(uint32*)&Link; }
+
+FORCEINLINE FArchive& operator <<(FArchive& Archive, FSVOHieLink& Link)
+{
+	Archive.Serialize(&Link, sizeof(FSVOHieLink));
+	return Archive;
+}
 
 struct SVONAV_API FSVONavLink
 {
@@ -89,13 +132,47 @@ FORCEINLINE FArchive& operator<<(FArchive& Archive, FSVONavLeafNode& Leaf)
 	return Archive;
 }
 
+struct SVONAV_API FSVOHieNode
+{
+	mortoncode_t MortonCode;
+	FSVONavLink Parent;
+	FSVONavLink FirstChild;
+	TArray<FSVONavLink> Neighbours;
+	TArray<FSVONavLink> Children;
+
+	FSVOHieNode() :
+        MortonCode(0),
+        Parent(FSVONavLink::GetInvalidLink()),
+        FirstChild(FSVONavLink::GetInvalidLink())
+	{
+	}
+
+	bool HasChildren() const { return FirstChild.IsValid(); }
+
+	int32 GetChildNum() const {return Children.Num();}
+
+	int32 GetNeighbourNum() const {return Neighbours.Num();}
+
+	bool operator==(const FSVOHieNode& Node) const{return MortonCode == Node.MortonCode;}
+};
+
+FORCEINLINE FArchive& operator <<(FArchive& Ar, FSVOHieNode& Node)
+{
+	Ar << Node.MortonCode;
+	Ar << Node.Parent;
+	Ar << Node.FirstChild;
+	Ar << Node.Neighbours;
+	Ar << Node.Children;
+	return Ar;
+}
+
 struct SVONAV_API FSVONavNode
 {
 	mortoncode_t MortonCode;
 	FSVONavLink Parent;
 	FSVONavLink FirstChild;
 	FSVONavLink Neighbours[12];
-	TArray<FSVONavLink> Childs;
+	TArray<FSVONavLink> Children;
 
 	FSVONavNode() :
 		MortonCode(0),
@@ -109,9 +186,9 @@ struct SVONAV_API FSVONavNode
 	int32 GetChildNum() const
 	{
 		int32 ChildCount = 0;
-		for (int32 i = 0; i < Childs.Num(); i++)
+		for (int32 i = 0; i < Children.Num(); i++)
 		{
-			if (Childs[i].IsValid()) ChildCount ++;
+			if (Children[i].IsValid()) ChildCount ++;
 		}
 		return ChildCount;
 	}
@@ -124,6 +201,18 @@ struct SVONAV_API FSVONavNode
 			if (Neighbours[i].IsValid()) NeighbourCount ++;
 		}
 		return NeighbourCount;
+	}
+	bool GetFirstInvalidNeighbour(int32 NeighbourIndex) const
+	{
+		for (int32 i = 0; i < 12; i++)
+		{
+			if (!Neighbours[i].IsValid())
+			{
+				NeighbourIndex = i;
+				return true;
+			}
+		}
+		return false;
 	}
 
 	bool operator==(const FSVONavNode& Node) const
@@ -143,7 +232,7 @@ FORCEINLINE FArchive& operator <<(FArchive& Ar, FSVONavNode& Node)
 		Ar << Node.Neighbours[I];
 	}
 
-	Ar << Node.Childs;
+	Ar << Node.Children;
 
 	return Ar;
 }
@@ -175,6 +264,32 @@ FORCEINLINE FArchive& operator<<(FArchive& Ar, FSVONavOctree& Octree)
 {
 	Ar << Octree.Layers;
 	Ar << Octree.Leaves;
+	return Ar;
+}
+
+struct SVONAV_API FSVOHieOctree
+{
+	TArray<TArray<FSVONavNode>> Layers;
+
+	void Reset()
+	{
+		Layers.Empty();
+	}
+
+	int32 GetSize()
+	{
+		int Size = 0;
+		for (int32 I = 0; I < Layers.Num(); I++)
+		{
+			Size += Layers[I].Num() * sizeof(FSVONavNode);
+		}
+		return Size;
+	}
+};
+
+FORCEINLINE FArchive& operator<<(FArchive& Ar, FSVOHieOctree& Octree)
+{
+	Ar << Octree.Layers;
 	return Ar;
 }
 
@@ -391,6 +506,7 @@ struct SVONAV_API FSVONavPathFindingConfig
 	FSVONavPathFindingConfig() :
 		EstimateWeight(5.0f),
 		NodeSizePreference(1.0f),
+		Algorithm(ESVONavAlgorithm::GreedyAStar),
 		Heuristic(ESVONavHeuristic::Euclidean),
 		PathPruning(ESVONavPathPruning::None),
 		PathSmoothing(3),

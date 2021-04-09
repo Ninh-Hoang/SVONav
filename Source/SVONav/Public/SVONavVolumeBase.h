@@ -11,7 +11,7 @@ DECLARE_DELEGATE(FSVONavUpdateOctreeDelegate);
 * Volume contains the octree and methods required for  navigation
 */
 
-UCLASS(Blueprintable, meta=(DisplayName = "SVO Navigation Volume Base"))
+UCLASS(Abstract, meta=(DisplayName = "SVO Navigation Volume Base"))
 class SVONAV_API ASVONavVolumeBase : public AVolume
 {
 	GENERATED_BODY()
@@ -149,12 +149,15 @@ public:
 	void GetMortonVoxel(const FVector& Location, int32 LayerIndex, FIntVector& MortonLocation) const;
 	FBox GetBoundingBox() const;
 	bool GetLink(const FVector& Location, FSVONavLink& Link);
+	bool GetLinkLocation(const FSVONavLink& Link, FVector& Location) const;
+	bool FindAccessibleLink(FVector& Location, FSVONavLink& Link);
 	float GetVoxelScale(uint8 LayerIndex) const;
 	const FSVONavNode& GetNode(const FSVONavLink& Link) const;
 	bool LinkNodeIsValid(const FSVONavLink& Link) const;
 	bool GetNodeLocation(uint8 LayerIndex, uint_fast64_t MortonCode, FVector& Location) const;
 	bool GetNodeLocation(const FSVONavLink& Link, FVector& Location);
 	void GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
+	void GetNeighbourLeaves(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
 	int32 GetLayerCount() const {return Octree.Layers.Num();}
 	bool IsWithinBounds(const FVector Location) const { return GetBoundingBox().IsInside(Location); }
 
@@ -232,8 +235,10 @@ protected:
 
 	bool IsBlocked(const FVector& Location, float Size) const;
 	bool IsBlocked(const FVector& Location, float Size, TArray<FOverlapResult>& OverlapResults) const;
+	bool IsAnyMemberBlocked(layerindex_t LayerIndex, mortoncode_t Code) const;
 
 	TArray<FSVONavNode>& GetLayer(const layerindex_t LayerIndex) { return Octree.Layers[LayerIndex]; };
+	const FSVONavLeafNode& GetLeafNode(nodeindex_t aIndex) const;
 	int32 GetLayerNodeCount(layerindex_t LayerIndex) const;
 	int32 GetSegmentNodeCount(layerindex_t LayerIndex) const;
 	virtual float GetActualVolumeSize() const { return FMath::Pow(2, VoxelExponent) * (VoxelSize); }
