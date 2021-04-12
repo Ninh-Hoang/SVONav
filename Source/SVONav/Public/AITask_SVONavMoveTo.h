@@ -110,6 +110,7 @@ protected:
 
 	FSVONavPathfindingRequestResult SVOResult;
 
+	UPROPERTY()
 	USVONavComponent* SVONavComponent;
 
 	void CheckPathPreConditions();

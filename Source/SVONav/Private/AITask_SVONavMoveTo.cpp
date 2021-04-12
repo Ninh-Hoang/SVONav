@@ -178,7 +178,6 @@ void UAITask_SVONavMoveTo::LogPathHelper()
 void UAITask_SVONavMoveTo::Activate()
 {
 	Super::Activate();
-
 	UE_CVLOG(bUseContinuousTracking, GetGameplayTasksComponent(), LogGameplayTasks, Log,
 	         TEXT("Continuous goal tracking requested, moving to: %s"),
 	         MoveRequest.IsMoveToActorRequest() ? TEXT("actor => looping successful moves!") : TEXT(

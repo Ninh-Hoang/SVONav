@@ -72,10 +72,6 @@ bool ASVONavVolumeBase::BuildOctree()
 
 	DebugDrawOctree();
 #endif
-	for (int32 i = 0; i < NumLayers; i ++)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Layer %i num: %i"), i, Octree.Layers[i].Num());
-	}
 	return true;
 }
 
@@ -236,7 +232,7 @@ bool ASVONavVolumeBase::FindAccessibleLink(FVector& Location, FSVONavLink& Link)
 
 bool ASVONavVolumeBase::GetLinkLocation(const FSVONavLink& Link, FVector& Location) const
 {
-	const FSVONavNode& Node = Octree.Layers[Link.GetLayerIndex()][Link.GetNodeIndex()];
+	const FSVONavNode& Node = GetNode(Link);
 	GetNodeLocation(Link.GetLayerIndex(), Node.MortonCode, Location);
 	if (Link.GetLayerIndex() == 0 && Node.FirstChild.IsValid())
 	{
@@ -285,18 +281,19 @@ FBox ASVONavVolumeBase::GetBoundingBox() const
 bool ASVONavVolumeBase::GetLink(const FVector& Location, FSVONavLink& Link)
 {
 	if (!IsWithinBounds(Location)) return false;
-
 	int32 LayerIndex = Octree.Layers.Num() - 2;
+	
 	while (LayerIndex >= 0)
 	{
-		const TArray<FSVONavNode>& Layer = GetLayer(LayerIndex);
+		const TArray<FSVONavNode>& Layer = GetLayer(LayerIndex);	
 		FIntVector Voxel;
 		GetMortonVoxel(Location, LayerIndex, Voxel);
 		const uint_fast64_t MortonCode = morton3D_64_encode(Voxel.X, Voxel.Y, Voxel.Z);
 
-		FVector Location;
-		GetNodeLocation(LayerIndex, MortonCode, Location);
-		DebugDrawVoxel(Location, FVector(VoxelHalfSizes[LayerIndex]), GetLayerColour(LayerIndex));
+		/*(FVector NodeLocation;
+		GetNodeLocation(LayerIndex, MortonCode, NodeLocation);
+		DebugDrawVoxel(NodeLocation, FVector(VoxelHalfSizes[LayerIndex]), GetLayerColour(LayerIndex));*/
+		
 		int32 NodeIndex;
 		if (GetNodeIndex(LayerIndex, MortonCode, NodeIndex))
 		{
@@ -518,6 +515,11 @@ void ASVONavVolumeBase::GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONa
 	}
 }
 
+const FSVONavNode& ASVONavVolumeBase::GetNode(const FSVONavPathPoint& Point) const
+{
+	return Octree.Layers[Point.Layer][Point.Index];
+}
+
 int32 ASVONavVolumeBase::GetLayerNodeCount(layerindex_t LayerIndex) const
 {
 	return FMath::Pow(8, VoxelExponent - LayerIndex);
@@ -598,6 +600,7 @@ void ASVONavVolumeBase::PostEditChangeProperty(FPropertyChangedEvent& PropertyCh
         "bDisplayLeafOcclusion",
         "bDisplayNeighbourLink",
         "LineScale",
+		"DebugVoxelList",
         "LayerColours",
         "LeafOcclusionColour",
         "bDisplayMortonCodes",
@@ -664,7 +667,6 @@ void ASVONavVolumeBase::DebugDrawOctree()
 {
 	GetWorld()->PersistentLineBatcher->SetComponentTickEnabled(false);
 	FlushDebugDraw();
-	DebugLinks.Empty();
 	
 	if (OctreeValid())
 	{
@@ -688,6 +690,7 @@ void ASVONavVolumeBase::DebugDrawOctree()
 	if (bDisplayNeighbourLink)
 	{
 		RegenerateLinkForDebug();
+		DebugDrawNeighbourLink();
 	}
 
 	if (bDisplayLeafOcclusion) DebugDrawLeafOcclusion();
@@ -728,8 +731,6 @@ void ASVONavVolumeBase::DebugDrawOctree()
 			}
 		}
 	}
-	
-	DebugDrawNeighbourLink();
 
 	//check out of bound voxel
 	for(int32 R = 0; R < Octree.Layers.Num(); R++)

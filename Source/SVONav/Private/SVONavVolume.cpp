@@ -18,11 +18,6 @@ void ASVONavVolume::InternalBuildOctree()
 	for (int32 I = NumLayers - 2; I >= 0; I--) BuildLinks(I);
 }
 
-void ASVONavVolume::RegenerateLinkForDebug()
-{
-	for (int32 I = Octree.Layers.Num() - 2; I >= 0; I--) BuildLinks(I);
-}
-
 void ASVONavVolume::InitRasterize()
 {
 	BlockedIndices.Emplace();
@@ -243,3 +238,7 @@ void ASVONavVolume::UpdateVolume()
 	const FBox Bounds = GetComponentsBoundingBox(true);
 	Bounds.GetCenterAndExtents(VolumeOrigin, VolumeExtent);
  }
+ 
+void ASVONavVolume::RegenerateLinkForDebug()
+{
+}

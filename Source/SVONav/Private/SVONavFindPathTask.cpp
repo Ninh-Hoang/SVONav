@@ -4,7 +4,7 @@
 
 void FSVONavFindPathTask::DoWork()
 {
-	SVONavPathFinder PathFinder(World, NavComp, Volume, Config);
+	SVONavPathFinder PathFinder(World, NavComp, Volume, HieVolume,Config);
 	// Run the path pruning, smoothing and debug draw back on the game thread
 
 	int Result = PathFinder.FindPath(StartLink, TargetLink, StartLocation, TargetLocation, Config, Path);

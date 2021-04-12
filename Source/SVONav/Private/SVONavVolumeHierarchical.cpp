@@ -8,6 +8,11 @@ ASVONavVolumeHierarchical::ASVONavVolumeHierarchical(const FObjectInitializer& O
 {
 }
 
+void ASVONavVolumeHierarchical::BeginPlay()
+{
+	Super::BeginPlay();
+}
+
 void ASVONavVolumeHierarchical::InternalBuildOctree()
 {
 	InitRasterize();
@@ -21,7 +26,7 @@ void ASVONavVolumeHierarchical::InternalBuildOctree()
 	//build duplicated morton index matrix, will be a helper for index search at run time
 	DuplicatedMortonMatrix.Emplace();
 	for (int32 i = 1; i < NumLayers; i ++) DuplicatedMortonMatrix.Emplace();
-	
+
 	BuildLayer0Link(0);
 	for (int32 i = 1; i < NumLayers; i++)
 	{
@@ -35,6 +40,7 @@ void ASVONavVolumeHierarchical::Initialise()
 	Super::Initialise();
 	HierarchyStartIndex.Empty();
 	DuplicatedMortonMatrix.Empty();
+	DebugLinks.Empty();
 }
 
 void ASVONavVolumeHierarchical::Serialize(FArchive& Ar)
@@ -42,6 +48,13 @@ void ASVONavVolumeHierarchical::Serialize(FArchive& Ar)
 	Super::Serialize(Ar);
 	Ar << HierarchyStartIndex;
 	Ar << DuplicatedMortonMatrix;
+}
+
+void ASVONavVolumeHierarchical::GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const
+{
+	if (!LinkNodeIsValid(Link)) return;
+	const FSVONavNode& Node = GetNode(Link);
+	NeighbourLinks = Node.NeighbourSet;
 }
 
 void ASVONavVolumeHierarchical::InitRasterize()
@@ -115,6 +128,13 @@ void ASVONavVolumeHierarchical::RasterizeLayer0()
 	}
 }
 
+bool ASVONavVolumeHierarchical::GetLinkLocation(const FSVONavLink& Link, FVector& Location) const
+{
+	const FSVONavNode& Node = GetNode(Link);
+	GetNodeLocation(Link.GetLayerIndex(), Node.MortonCode, Location);
+	return true;
+}
+
 void ASVONavVolumeHierarchical::RasterizeLayer1()
 {
 	Octree.Layers.Emplace();
@@ -167,7 +187,8 @@ void ASVONavVolumeHierarchical::BuildLayer0Link(layerindex_t LayerIndex)
 			//int32 NodeIndex = I;
 			mortoncode_t CurrentCode = Node.MortonCode;
 			mortoncode_t OriginalCode = CurrentCode;
-			FSVONavLink& Link = Node.Neighbours[Direction];
+			int32 LinkIndex = Node.NeighbourSet.Emplace();
+			FSVONavLink& Link = Node.NeighbourSet[LinkIndex ];
 			uint8 CurrentLayer = LayerIndex;
 			//FindLinkViaCode_Hie(CurrentLayer, CurrentCode, Direction, Link, NodeLocation);
 			while (!FindLinkViaCode(CurrentLayer, CurrentCode, OriginalCode, Direction, Link, NodeLocation) &&
@@ -176,7 +197,6 @@ void ASVONavVolumeHierarchical::BuildLayer0Link(layerindex_t LayerIndex)
 				CurrentLayer++;
 				CurrentCode = CurrentCode >> 3;
 			}
-			//Node.Neighbours[Direction + 6].Invalidate();
 		}
 	}
 }
@@ -224,9 +244,10 @@ void ASVONavVolumeHierarchical::BuildHierarchyNodes(layerindex_t Layer)
 			{
 				int32 ChildIndex = ChildGroups.Emplace();
 				ChildGroups[ChildIndex].Add(ChildIndexes[B]);
-				for (int32 C = 0; C < 12; C++)
+				FSVONavNode& ChildNode = Octree.Layers[ChildLayer][ChildIndexes[B]];
+				for (int32 C = 0; C < ChildNode.GetNeighbourNum(); C++)
 				{
-					FSVONavLink& NeighbourLink = Octree.Layers[ChildLayer][ChildIndexes[B]].Neighbours[C];
+					FSVONavLink& NeighbourLink = ChildNode.NeighbourSet[C];
 					int32 CurrentNeighbourIndex = NeighbourLink.NodeIndex;
 					if (NeighbourLink.GetLayerIndex() == ChildLayer && ChildIndexes.Contains(CurrentNeighbourIndex))
 					{
@@ -322,9 +343,9 @@ void ASVONavVolumeHierarchical::BuildLayerLink(layerindex_t LayerIndex)
 			{
 				if (!Node.Children[C].IsValid()) continue;
 				const FSVONavNode& Child = GetNode(Node.Children[C]);
-				for (int32 A = 0; A < 12; A ++)
+				for (int32 A = 0; A < Child.GetNeighbourNum(); A ++)
 				{
-					const FSVONavLink& ChildNeighbourLink = Child.Neighbours[A];
+					const FSVONavLink& ChildNeighbourLink = Child.NeighbourSet[A];
 					if (ChildNeighbourLink.IsValid())
 					{
 						const FSVONavNode& ChildNeighbourNode = GetNode(ChildNeighbourLink);
@@ -351,57 +372,51 @@ void ASVONavVolumeHierarchical::BuildLayerLink(layerindex_t LayerIndex)
 					}
 				}
 			}
-			ensure(NeighbourLinks.Num() < 13);
-			for (int32 V = 0; V < 12; V++)
+
+			for (int32 V = 0; V < NeighbourLinks.Num(); V++)
 			{
-				if (V <= NeighbourLinks.Num() - 1)
+				Node.NeighbourSet.Emplace();
+				Node.NeighbourSet[V].SetNodeIndex(NeighbourLinks[V].GetNodeIndex());
+				Node.NeighbourSet[V].SetLayerIndex(NeighbourLinks[V].GetLayerIndex());
+
+#if WITH_EDITOR
+				FVector NodeLocation;
+				GetNodeLocation(LayerIndex, Node.MortonCode, NodeLocation);
+
+				FVector NeighbourLocation;
+				GetNodeLocation(Node.NeighbourSet[V].GetLayerIndex(),
+				                GetNode(Node.NeighbourSet[V]).MortonCode, NeighbourLocation);
+				DebugLinks.Add(FSVONavDebugLink(NodeLocation, NeighbourLocation, LayerIndex));
+#endif
+
+				if (NeighbourLinks[V].GetLayerIndex() == LayerIndex)
 				{
-					Node.Neighbours[V].SetNodeIndex(NeighbourLinks[V].GetNodeIndex());
-					Node.Neighbours[V].SetLayerIndex(NeighbourLinks[V].GetLayerIndex());
-					
-#if WITH_EDITOR
-					FVector NodeLocation;
-					GetNodeLocation(LayerIndex, Node.MortonCode, NodeLocation);
-
-					FVector NeighbourLocation;
-					GetNodeLocation(Node.Neighbours[V].GetLayerIndex(),
-                                        GetNode(Node.Neighbours[V]).MortonCode, NeighbourLocation);
-					DebugLinks.Add(FSVONavDebugLink(NodeLocation, NeighbourLocation, LayerIndex));
-#endif
-
-					if (NeighbourLinks[V].GetLayerIndex() == LayerIndex)
+					bool AlreadyContainNeighbour = false;;
+					FSVONavNode& NeighbourNode = const_cast<FSVONavNode&>(GetNode(Node.NeighbourSet[V]));
+					for (auto& Link : NeighbourNode.NeighbourSet)
 					{
-						bool AlreadyContainNeighbour = false;;
-						FSVONavNode& NeighbourNode = const_cast<FSVONavNode&>(GetNode(Node.Neighbours[V]));
-						for (auto& Link : NeighbourNode.Neighbours)
+						if (Link.IsValid() && Link.LayerIndex == LayerIndex && Link.NodeIndex == I)
 						{
-							if (Link.IsValid() && Link.LayerIndex == LayerIndex && Link.NodeIndex == I)
-							{
-								AlreadyContainNeighbour = true;
-								break;
-							}
-						}
-						if (!AlreadyContainNeighbour)
-						{
-							int32 InvalidNeighbourIndex = 0;
-							check(NeighbourNode.GetFirstInvalidNeighbour(InvalidNeighbourIndex));
-							NeighbourNode.Neighbours[InvalidNeighbourIndex].SetLayerIndex(LayerIndex);
-							NeighbourNode.Neighbours[InvalidNeighbourIndex].SetNodeIndex(I);
-
-#if WITH_EDITOR
-							FVector NodeLocationA;
-							GetNodeLocation(LayerIndex, NeighbourNode.MortonCode, NodeLocationA);
-
-							FVector NeighbourLocationA;
-							GetNodeLocation(LayerIndex, Node.MortonCode, NeighbourLocationA);
-							DebugLinks.Add(FSVONavDebugLink(NodeLocationA, NeighbourLocationA, LayerIndex));
-#endif
+							AlreadyContainNeighbour = true;
+							break;
 						}
 					}
+					if (!AlreadyContainNeighbour)
+					{
+						int32 InvalidNeighbourIndex = NeighbourNode.NeighbourSet.Emplace();
+						NeighbourNode.NeighbourSet[InvalidNeighbourIndex].SetLayerIndex(LayerIndex);
+						NeighbourNode.NeighbourSet[InvalidNeighbourIndex].SetNodeIndex(I);
 
-					continue;
+#if WITH_EDITOR
+						FVector NodeLocationA;
+						GetNodeLocation(LayerIndex, NeighbourNode.MortonCode, NodeLocationA);
+
+						FVector NeighbourLocationA;
+						GetNodeLocation(LayerIndex, Node.MortonCode, NeighbourLocationA);
+						DebugLinks.Add(FSVONavDebugLink(NodeLocationA, NeighbourLocationA, LayerIndex));
+#endif
+					}
 				}
-				Node.Neighbours[V].Invalidate();
 			}
 		}
 		else
@@ -414,7 +429,8 @@ void ASVONavVolumeHierarchical::BuildLayerLink(layerindex_t LayerIndex)
 				{
 					mortoncode_t CurrentCode = Node.MortonCode;
 					mortoncode_t OriginalCode = CurrentCode;
-					FSVONavLink& Link = Node.Neighbours[Direction];
+					int32 LinkIndex = Node.NeighbourSet.Emplace();
+					FSVONavLink& Link = Node.NeighbourSet[LinkIndex];
 					uint8 CurrentLayer = LayerIndex;
 
 					while (!FindLinkViaCodeChildlessNode(CurrentLayer, CurrentCode, OriginalCode, Direction, Link,
@@ -433,6 +449,13 @@ void ASVONavVolumeHierarchical::BuildLayerLink(layerindex_t LayerIndex)
 TArray<int32> ASVONavVolumeHierarchical::GetArrayNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode)
 {
 	TArray<int32> NodeSearchResults;
+	int32 FirstNodeIndex;
+	if(GetNodeIndex(LayerIndex, NodeMortonCode, FirstNodeIndex))
+	{
+		NodeSearchResults.Add(FirstNodeIndex);
+		NodeSearchResults.Append(GetArrayNodeIndexExtra(LayerIndex, NodeMortonCode));
+	}
+	/*TArray<int32> NodeSearchResults;
 	const auto& OctreeLayer = Octree.Layers[LayerIndex];
 
 	int32 Start = 0;
@@ -451,22 +474,22 @@ TArray<int32> ASVONavVolumeHierarchical::GetArrayNodeIndex(layerindex_t LayerInd
 		}
 		else End = Mean - 1;
 		Mean = (Start + End) * 0.5f;
-	}
+	}*/
 	return NodeSearchResults;
 }
 
 TArray<int32> ASVONavVolumeHierarchical::GetArrayNodeIndexExtra(layerindex_t LayerIndex, mortoncode_t NodeMortonCode)
 {
 	TArray<int32> NodeSearchResults;
-	//NodeSearchResults.Append(DuplicatedMortonMatrix[LayerIndex].FindRef(NodeMortonCode));
-	const auto& OctreeLayer = Octree.Layers[LayerIndex];
+	NodeSearchResults.Append(DuplicatedMortonMatrix[LayerIndex].FindRef(NodeMortonCode));
+	/*const auto& OctreeLayer = Octree.Layers[LayerIndex];
 	for (int i = 0; i < OctreeLayer.Num(); i++)
 	{
 		if (OctreeLayer[i].MortonCode == NodeMortonCode)
 		{
 			NodeSearchResults.Add(i);
 		}
-	}
+	}*/
 	//TODO: Change this to a better search method as right now we scan everything 
 	/*if (HierarchyStartIndex[LayerIndex] + 1 < OctreeLayer.Num())
 	{
@@ -514,7 +537,7 @@ TArray<int32> ASVONavVolumeHierarchical::GetArrayNodeIndexExtra(layerindex_t Lay
 bool ASVONavVolumeHierarchical::GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode,
                                              int32& NodeIndex) const
 {
-	const auto& OctreeLayer = Octree.Layers[LayerIndex];
+	/*const auto& OctreeLayer = Octree.Layers[LayerIndex];
 	int32 Start = 0;
 	int32 End = HierarchyStartIndex.Num() == 0 ? OctreeLayer.Num() - 1 : HierarchyStartIndex[LayerIndex];
 	int32 Mean = (Start + End) * 0.5f;
@@ -530,6 +553,36 @@ bool ASVONavVolumeHierarchical::GetNodeIndex(layerindex_t LayerIndex, uint_fast6
 		}
 		else End = Mean - 1;
 		Mean = (Start + End) * 0.5f;
+	}
+	return false;*/
+
+	//interpolation search
+	const auto& OctreeLayer = Octree.Layers[LayerIndex];
+	int32 Start = 0;
+	int32 End = HierarchyStartIndex.Num() == 0 ? OctreeLayer.Num() - 1 : HierarchyStartIndex[LayerIndex];
+
+	while (Start <= End && NodeMortonCode >= OctreeLayer[Start].MortonCode && NodeMortonCode <= OctreeLayer[End].MortonCode)
+	{
+		if (Start == End)
+		{
+			if (OctreeLayer[Start].MortonCode == NodeMortonCode)
+			{
+				NodeIndex = Start;
+				return true;
+			}
+			return false;
+		}
+		int32 Mean = Start + (((double)(End - Start) /
+            (OctreeLayer[End].MortonCode - OctreeLayer[Start].MortonCode)) * (NodeMortonCode - OctreeLayer[Start].MortonCode));
+ 
+		if (OctreeLayer[Mean].MortonCode == NodeMortonCode)
+		{
+			NodeIndex = Mean;
+			return true;
+		}
+		
+		if (OctreeLayer[Mean].MortonCode < NodeMortonCode) Start = Mean + 1;
+		else End = Mean - 1;
 	}
 	return false;
 }
@@ -663,11 +716,10 @@ bool ASVONavVolumeHierarchical::FindLinkViaCode(layerindex_t LayerIndex, mortonc
 	return false;
 }
 
-void ASVONavVolumeHierarchical::RegenerateLinkForDebug()
+#if WITH_EDITOR
+void ASVONavVolumeHierarchical::DebugDrawOctree()
 {
-	BuildLayer0Link(0);
-	for (int32 i = 1; i < NumLayers; i++)
-	{
-		BuildLayerLink(i);
-	}
+	Super::DebugDrawOctree();
+	if(Octree.Layers.Num() > 0) UE_LOG(LogTemp, Warning, TEXT("Number of independent volumes: %i"), Octree.Layers[NumLayers-1].Num());
 }
+#endif

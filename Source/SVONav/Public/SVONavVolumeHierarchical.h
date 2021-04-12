@@ -19,13 +19,17 @@ public:
 	ASVONavVolumeHierarchical(const FObjectInitializer& ObjectInitializer);
 	TArray<int32> GetArrayNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode);
 	TArray<int32> GetArrayNodeIndexExtra(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode);
+	virtual void GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
 	
 protected:
+	virtual void BeginPlay() override;
+	
 	virtual void Initialise() override;
 	virtual void InternalBuildOctree() override;
-	virtual void RegenerateLinkForDebug() override;
 	virtual void Serialize(FArchive& Ar) override;
 	virtual bool GetNodeIndex(layerindex_t LayerIndex, uint_fast64_t NodeMortonCode, int32& NodeIndex) const override;
+	virtual bool GetLinkLocation(const FSVONavLink& Link, FVector& Location) const override;
+	virtual void DebugDrawOctree() override;
 	
 private:
 	TArray<int32> HierarchyStartIndex;

@@ -145,18 +145,24 @@ public:
 
 	//getter setter checker
 	bool OctreeValid() const { return NumLayers > 0; }
+	//only for debugging
+	const FSVONavOctree& GetOctree() const { return Octree;};
+
+	const TArray<float> GetVoxelHalfSize() const {return VoxelHalfSizes;}
 	void GetVolumeExtents(const FVector& Location, int32 LayerIndex, FIntVector& Extents) const;
 	void GetMortonVoxel(const FVector& Location, int32 LayerIndex, FIntVector& MortonLocation) const;
 	FBox GetBoundingBox() const;
 	bool GetLink(const FVector& Location, FSVONavLink& Link);
-	bool GetLinkLocation(const FSVONavLink& Link, FVector& Location) const;
+	virtual bool GetLinkLocation(const FSVONavLink& Link, FVector& Location) const;
 	bool FindAccessibleLink(FVector& Location, FSVONavLink& Link);
 	float GetVoxelScale(uint8 LayerIndex) const;
 	const FSVONavNode& GetNode(const FSVONavLink& Link) const;
+	const FSVONavNode& GetNode(const FSVONavPathPoint& Point) const;
 	bool LinkNodeIsValid(const FSVONavLink& Link) const;
 	bool GetNodeLocation(uint8 LayerIndex, uint_fast64_t MortonCode, FVector& Location) const;
 	bool GetNodeLocation(const FSVONavLink& Link, FVector& Location);
-	void GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
+	virtual void GetNeighbourLinks(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
+	//virtual void GetLowestLevelChildNeighbours(const FSVONavLink& Link, const FSVONavLink& NeighbourLink, TArray<FSVONavLink>& ChildNeighbourLinks) const;
 	void GetNeighbourLeaves(const FSVONavLink& Link, TArray<FSVONavLink>& NeighbourLinks) const;
 	int32 GetLayerCount() const {return Octree.Layers.Num();}
 	bool IsWithinBounds(const FVector Location) const { return GetBoundingBox().IsInside(Location); }

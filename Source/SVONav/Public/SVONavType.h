@@ -171,7 +171,8 @@ struct SVONAV_API FSVONavNode
 	mortoncode_t MortonCode;
 	FSVONavLink Parent;
 	FSVONavLink FirstChild;
-	FSVONavLink Neighbours[12];
+	FSVONavLink Neighbours[6];
+	TArray<FSVONavLink> NeighbourSet;
 	TArray<FSVONavLink> Children;
 
 	FSVONavNode() :
@@ -183,37 +184,9 @@ struct SVONAV_API FSVONavNode
 
 	bool HasChildren() const { return FirstChild.IsValid(); }
 
-	int32 GetChildNum() const
-	{
-		int32 ChildCount = 0;
-		for (int32 i = 0; i < Children.Num(); i++)
-		{
-			if (Children[i].IsValid()) ChildCount ++;
-		}
-		return ChildCount;
-	}
+	int32 GetChildNum() const {return Children.Num();}
 
-	int32 GetNeighbourNum() const
-	{
-		int32 NeighbourCount = 0;
-		for (int32 i = 0; i < 12; i++)
-		{
-			if (Neighbours[i].IsValid()) NeighbourCount ++;
-		}
-		return NeighbourCount;
-	}
-	bool GetFirstInvalidNeighbour(int32 NeighbourIndex) const
-	{
-		for (int32 i = 0; i < 12; i++)
-		{
-			if (!Neighbours[i].IsValid())
-			{
-				NeighbourIndex = i;
-				return true;
-			}
-		}
-		return false;
-	}
+	int32 GetNeighbourNum() const{return NeighbourSet.Num();}
 
 	bool operator==(const FSVONavNode& Node) const
 	{
@@ -227,11 +200,11 @@ FORCEINLINE FArchive& operator <<(FArchive& Ar, FSVONavNode& Node)
 	Ar << Node.Parent;
 	Ar << Node.FirstChild;
 
-	for (int32 I = 0; I < 12; I++)
+	for (int32 I = 0; I < 6; I++)
 	{
 		Ar << Node.Neighbours[I];
 	}
-
+	Ar << Node.NeighbourSet;
 	Ar << Node.Children;
 
 	return Ar;
@@ -391,16 +364,34 @@ struct SVONAV_API FSVONavPathPoint
 	UPROPERTY(BlueprintReadWrite)
 	int32 Layer;
 
+	UPROPERTY(BlueprintReadWrite)
+	int32 Index;
+
+	UPROPERTY(BlueprintReadWrite)
+	bool Refined;
+
 	FSVONavPathPoint() :
 		Location(FVector::ZeroVector),
-		Layer(-1)
+		Layer(-1),
+		Index(-1),
+		Refined(false)
 	{
 	}
 
-	FSVONavPathPoint(const FVector& Location, const int32 LayerIndex) :
+	FSVONavPathPoint(const FVector& Location, const int32 LayerIndex, const int32 NodeIndex, const bool bRefine) :
 		Location(Location),
-		Layer(LayerIndex)
+		Layer(LayerIndex),
+		Index(NodeIndex),
+		Refined(bRefine)
 	{
+	}
+
+	FSVONavLink GetLink()
+	{
+		FSVONavLink Link;
+		Link.SetLayerIndex(Layer);
+		Link.SetNodeIndex(Index);
+		return Link;
 	}
 };
 
@@ -417,6 +408,13 @@ struct SVONAV_API FSVONavPath
 	TArray<FSVONavPathPoint>& GetPoints() { return Points; }
 	void SetPoints(const TArray<FSVONavPathPoint> NewPoints) { Points = NewPoints; }
 	void GetPath(TArray<FVector>& Path) { for (const auto& Point : Points) { Path.Add(Point.Location); } }
+	FSVONavLink GetLink(int32 PointIndex)
+	{
+		FSVONavLink Link = FSVONavLink();
+		Link.SetLayerIndex(Points[PointIndex].Layer);
+		Link.SetNodeIndex(Points[PointIndex].Index);
+		return Link;
+	}
 
 	// Copy the path positions into a standard navigation path
 	void CreateNavPath(FNavigationPath& OutPath)
@@ -433,7 +431,8 @@ typedef TSharedPtr<FSVONavPath, ESPMode::ThreadSafe> FSVONavPathSharedPtr;
 UENUM()
 enum class ESVONavAlgorithm: uint8
 {
-	GreedyAStar UMETA(DisplayName="GreedyA*"),
+	HierarchicalAStar UMETA(DisplayName="Hierarchical A*"),
+	GreedyAStar UMETA(DisplayName="Greedy A*"),
 	Testing UMETA(DisplayName="Testing")
 };
 
@@ -506,7 +505,7 @@ struct SVONAV_API FSVONavPathFindingConfig
 	FSVONavPathFindingConfig() :
 		EstimateWeight(5.0f),
 		NodeSizePreference(1.0f),
-		Algorithm(ESVONavAlgorithm::GreedyAStar),
+		Algorithm(ESVONavAlgorithm::HierarchicalAStar),
 		Heuristic(ESVONavHeuristic::Euclidean),
 		PathPruning(ESVONavPathPruning::None),
 		PathSmoothing(3),

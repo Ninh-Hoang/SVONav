@@ -22,10 +22,17 @@ class SVONAV_API USVONavComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
+
+	UPROPERTY()
+	ASVONavVolume* Volume;
+
+	UPROPERTY()
+	ASVONavVolumeBase* HieVolume;
+
 	// The Algorithm use for pathfinding
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Pathfinding")
 	ESVONavAlgorithm Algorithm = ESVONavAlgorithm::GreedyAStar;
-	
+
 	// The heuristic to use for scoring during pathfinding
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SVONav|Pathfinding")
 	ESVONavHeuristic Heuristic = ESVONavHeuristic::Euclidean;
@@ -83,22 +90,36 @@ public:
 	                       const bool bCheckLineOfSight, FSVONavPathSharedPtr* NavPath,
 	                       ESVONavPathFindingCallResult& Result);
 
+	bool FindPathHierarchicalImmediate(const FVector& StartLocation, const FVector& TargetLocation,
+	                                   const bool bCheckLineOfSight, FSVONavPathSharedPtr* NavPath,
+	                                   ESVONavPathFindingCallResult& Result);
+
 	UFUNCTION(BlueprintCallable, Category = "SVONav|Pathfinding")
-	bool DoesPathExist(const FVector& StartLocation, const FVector& TargetLocation);
+	bool DoesPathExist(const FVector StartLocation, const FVector TargetLocation);
 
 	FSVONavPathSharedPtr& GetPath() { return SVONavPath; }
 	virtual FVector GetPawnPosition() const;
 
-	UPROPERTY()
-	ASVONavVolume* Volume;
+	virtual bool DoesPathExistInternal(const FSVONavLink& StartLink,
+	                                   const FSVONavLink& TargetLink,
+	                                   int32& ShareParentLayerIndex,
+	                                   int32& ShareParentNodeIndex,
+	                                   FSVONavLink& TopStartLink,
+	                                   FSVONavLink& TopTargetLink,
+	                                   TArray<FSVONavLink>& StartLinkLevels,
+	                                   TArray<FSVONavLink>& TargetLinksLevels);
 
-	UPROPERTY()
-	ASVONavVolumeBase* HieVolume;
-	
 protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
-
+	virtual bool CheckHieVolumeCondition(FSVONavLink& StartLink, FSVONavLink& TargetLink,
+	                                     const FVector StartLocation, const FVector TargetLocation);
+	void CreateLinkLevelArray(const FSVONavLink& StartLink,
+	                          const FSVONavLink& TargetLink,
+	                          const FSVONavLink& TopStartLink,
+	                          const FSVONavLink& TopTargetLink,
+	                          TArray<FSVONavLink>& StartLinkLevels,
+	                          TArray<FSVONavLink>& TargetLinkLevels);
 public:
 	bool VolumeContainsOctree() const;
 	bool VolumeContainsOwner() const;
